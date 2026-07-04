@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gateway.config import get_settings
 from gateway.db import get_db
 from gateway.security import get_current_user
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from services.billing import credit_ledger
 from services.billing.razorpay_client import (
     RazorpayClient,
@@ -69,7 +69,7 @@ async def create_subscription(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Subscription:
-    await require_business_access(body.business_id, user, db)
+    await require_business_write_access(body.business_id, user, db)
     settings = get_settings()
 
     razorpay_subscription_id = None
@@ -144,7 +144,7 @@ async def recharge_credit(
     # webhook (mirroring razorpay_webhook above), not a client-authored
     # amount — flagging rather than silently shipping this as bulletproof,
     # since there's no live Razorpay flow to verify against in this pass.
-    await require_business_access(business_id, user, db)
+    await require_business_write_access(business_id, user, db)
     entry = await credit_ledger.credit(
         db, business_id, body.credit_type, body.amount, reference_type=body.reference_type
     )

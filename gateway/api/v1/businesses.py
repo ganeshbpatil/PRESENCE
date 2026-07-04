@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway.db import get_db
 from gateway.security import get_current_user
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from gateway.vault import get_vault_client
 from shared.models.core import (
     Business,
@@ -120,7 +120,7 @@ async def create_connection(
     user: User = Depends(get_current_user),
     vault: VaultClient = Depends(get_vault_client),
 ) -> PlatformConnection:
-    await require_business_access(business_id, user, db)
+    await require_business_write_access(business_id, user, db)
 
     access_token_ref = None
     if body.access_token:

@@ -12,7 +12,7 @@ import csv
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -20,13 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway.db import get_db
 from gateway.security import get_current_user
+from gateway.tenancy import require_agency_access
 from shared.models.core import (
-    Agency,
     AttributionCorrelation,
     Business,
     Review,
     User,
-    UserRole,
 )
 
 router = APIRouter(prefix="/agencies", tags=["agencies"])
@@ -42,27 +41,13 @@ class BusinessSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
-async def _require_agency_access(agency_id: uuid.UUID, user: User, db: AsyncSession) -> Agency:
-    agency = (
-        await db.execute(select(Agency).where(Agency.id == agency_id))
-    ).scalar_one_or_none()
-    if agency is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Agency not found")
-    if user.agency_id != agency_id or user.role not in (
-        UserRole.agency_admin,
-        UserRole.agency_viewer,
-    ):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this agency")
-    return agency
-
-
 @router.get("/{agency_id}/businesses", response_model=list[BusinessSummary])
 async def list_agency_businesses(
     agency_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Business]:
-    await _require_agency_access(agency_id, user, db)
+    await require_agency_access(agency_id, user, db)
     result = await db.execute(select(Business).where(Business.agency_id == agency_id))
     return list(result.scalars().all())
 
@@ -73,7 +58,7 @@ async def consolidated_report(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    await _require_agency_access(agency_id, user, db)
+    await require_agency_access(agency_id, user, db)
 
     businesses = list(
         (await db.execute(select(Business).where(Business.agency_id == agency_id))).scalars()

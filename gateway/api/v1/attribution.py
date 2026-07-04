@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gateway.db import get_db
 from gateway.security import get_current_user
 from gateway.tasks.attribution import compute_correlation_task
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from shared.models.core import AttributionCorrelation, User
 
 router = APIRouter(tags=["attribution"])
@@ -73,7 +73,7 @@ async def trigger_compute_correlation(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    await require_business_access(body.business_id, user, db)
+    await require_business_write_access(body.business_id, user, db)
     compute_correlation_task.delay(
         str(body.business_id), body.period_start.isoformat(), body.period_end.isoformat()
     )
