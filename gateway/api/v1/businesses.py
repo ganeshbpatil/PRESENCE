@@ -43,6 +43,20 @@ class BusinessCreate(BaseModel):
     area: str | None = None
 
 
+class BusinessUpdate(BaseModel):
+    # All optional -- PATCH semantics, only set fields are touched.
+    # Deliberately no agency_id here: reassigning a business between
+    # agencies has billing/attribution-history implications that deserve
+    # their own explicit, audited operation later, not a silent field on a
+    # generic edit form.
+    name: str | None = None
+    category: BusinessCategory | None = None
+    tier: BusinessTier | None = None
+    pincode: str | None = None
+    area: str | None = None
+    subscription_status: str | None = None
+
+
 class BusinessResponse(BaseModel):
     id: uuid.UUID
     name: str
@@ -105,6 +119,21 @@ async def get_business(
     user: User = Depends(get_current_user),
 ) -> Business:
     business = await require_business_access(business_id, user, db)
+    return business
+
+
+@router.patch("/{business_id}", response_model=BusinessResponse)
+async def update_business(
+    business_id: uuid.UUID,
+    body: BusinessUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Business:
+    business = await require_business_write_access(business_id, user, db)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(business, field, value)
+    await db.commit()
+    await db.refresh(business)
     return business
 
 
