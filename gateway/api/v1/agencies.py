@@ -89,6 +89,17 @@ async def create_agency(body: AgencyCreate, db: AsyncSession = Depends(get_db)) 
     return agency
 
 
+@router.get("/{agency_id}", response_model=AgencyResponse)
+async def get_agency(
+    agency_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Agency:
+    # Needed so an edit form has something to prefill -- previously the
+    # only way to see an agency's own fields was the PATCH response.
+    return await require_agency_access(agency_id, user, db)
+
+
 @router.patch("/{agency_id}", response_model=AgencyResponse)
 async def update_agency(
     agency_id: uuid.UUID,

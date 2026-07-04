@@ -44,9 +44,19 @@ export default function HomePage() {
           <h1 className="text-lg font-semibold">Agency businesses</h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400">{user.email}</p>
         </div>
-        <button onClick={logout} className="text-sm underline">
-          Sign out
-        </button>
+        <div className="flex items-center gap-3">
+          {user.agency_id && (
+            <Link href={`/agencies/${user.agency_id}`} className="text-sm underline">
+              Manage agency
+            </Link>
+          )}
+          <Link href="/businesses/new" className="text-sm underline">
+            Add business
+          </Link>
+          <button onClick={logout} className="text-sm underline">
+            Sign out
+          </button>
+        </div>
       </div>
 
       {error && <ErrorState message={error} />}

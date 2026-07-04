@@ -53,3 +53,79 @@ export function ErrorState({ message }: { message: string }) {
     </p>
   );
 }
+
+export function Button({
+  children,
+  variant = "primary",
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "danger";
+}) {
+  const styles = {
+    primary:
+      "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 hover:opacity-90",
+    secondary:
+      "border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-900",
+    danger: "bg-red-700 text-white hover:bg-red-800",
+  }[variant];
+
+  return (
+    <button
+      {...props}
+      className={`rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${styles} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Money/message/access-changing actions get a native confirm() prompt
+// before firing -- deliberately not a custom modal, this is a minimal
+// admin panel, not a design system (see this file's header comment).
+export function ConfirmButton({
+  confirmMessage,
+  onConfirm,
+  children,
+  variant = "danger",
+  ...props
+}: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onClick"> & {
+  confirmMessage: string;
+  onConfirm: () => void;
+  variant?: "primary" | "secondary" | "danger";
+}) {
+  return (
+    <Button
+      {...props}
+      variant={variant}
+      onClick={() => {
+        if (window.confirm(confirmMessage)) onConfirm();
+      }}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={`w-full rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1.5 text-sm ${props.className ?? ""}`}
+    />
+  );
+}
+
+export function Select({
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...props}
+      className={`w-full rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1.5 text-sm ${props.className ?? ""}`}
+    >
+      {children}
+    </select>
+  );
+}
