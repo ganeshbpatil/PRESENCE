@@ -59,7 +59,10 @@ the trade-off to Ganesh first:
   webhook/campaign send, Meta social adapter (insights + basic posting),
   review-response drafting via ai-orchestrator, in-app/email notifications.
   Alembic migrations for all of the above. 36 passing tests. Deployed live
-  at https://presence.srv1000510.hstgr.cloud/ (merged via PR #2).
+  at https://presence.srv1000510.hstgr.cloud/ (merged via PR #2). Separately,
+  Customer/Marketplace scope decision (see decision log below) spec'd into
+  `USER_PERSONAS.md`, `06_MODULES/CUSTOMER.md`, `06_MODULES/HYPERLOCAL_ENGINE.md`,
+  `01_BUSINESS/ROADMAP.md` Phase 2.5 — docs only, no build yet (see gate below).
 - In progress: —
 - Next up: wire up a real secrets vault for platform access tokens (Meta
   adapter currently takes a raw token — see
@@ -68,15 +71,21 @@ the trade-off to Ganesh first:
   Actions VPS_* secrets so the CI/CD auto-deploy pipeline actually runs
   (currently unconfigured — deploy-staging/production jobs fail with
   "missing server host"; the live site is being updated by hand via
-  `docker compose` on the VPS instead)
+  `docker compose` on the VPS instead); first Gallabox adapter hardening;
+  attribution v0 signal capture depth
 - Known issues / tech debt: CI/CD deploy-staging and deploy-production jobs
   fail on every push to main because the required repo secrets (VPS_HOST,
   VPS_USER, VPS_SSH_KEY, VPS_STAGING_DIR, VPS_PRODUCTION_DIR) were never
   added — test/build jobs still pass and gate merges correctly, only the
-  deploy step is a no-op failure right now
+  deploy step is a no-op failure right now. Separately, `BUSINESS_MODEL.md`,
+  PRD non-goals, `FEATURE_LIST.md`, `COMPETITOR_ANALYSIS.md` still describe
+  the pre-2026-07-04 no-marketplace position and haven't been reconciled
+  with the decision log below yet.
 - Blocked on: Phase 0 validation research (Pune census, SMB churn calls,
   agency pre-sell) — do not over-invest in features that depend on unvalidated
-  segment/pricing assumptions until Phase 0 exit criteria are met
+  segment/pricing assumptions until Phase 0 exit criteria are met. Hyperlocal
+  Engine build work is separately blocked on its own Phase 2 density trigger
+  regardless of Phase 0 status (see `06_MODULES/HYPERLOCAL_ENGINE.md`)
 
 ## Tech Stack (do not deviate without discussion)
 
@@ -123,12 +132,33 @@ See `.claude/commands/` — custom commands for repeated workflows:
 Per the diligence memo's Session 6 recommendation — do not build these without
 an explicit override conversation, even if a feature request seems to imply
 them:
-- Marketplace / two-sided discovery
-- Commission-based revenue / payment-flow sitting
-- Loyalty network / cross-promotion between businesses
+- Commission-based revenue / payment-flow sitting (RBI PA/PG compliance
+  surface pre-PMF — see PAYMENTS.md)
+- Loyalty network / cross-promotion between businesses (see OFFERS.md —
+  requires the same consumer-side density gate as marketplace, below)
 - Franchise tooling
 - Full multi-touch attribution (v0 is proxy-signal correlation only)
 - API/integration layer for third parties (premature — no partner demand yet)
+
+### Decision log
+
+**2026-07-04 — Marketplace / consumer discovery app: spec'd, build gated.**
+Ganesh reviewed the cross-doc rationale for deferring this (BUSINESS_VISION,
+BUSINESS_MODEL, COMPETITOR_ANALYSIS, PRD non-goals, CUSTOMER/OFFERS/SEARCH/
+HYPERLOCAL_ENGINE module docs all independently named and rejected it) and
+approved adding it to the roadmap as a third product surface (End Consumer,
+alongside SMB Owner and Agency Account Manager). Decision: **spec now, build
+gated** — `USER_PERSONAS.md`, `06_MODULES/CUSTOMER.md`, and
+`06_MODULES/HYPERLOCAL_ENGINE.md` now carry a real spec, and
+`01_BUSINESS/ROADMAP.md` has a Phase 2.5 slot for it — but Phase 1 MVP
+engineering stays 100% on existing scope, and Hyperlocal Engine build work
+does not start until the trigger already defined in that doc fires: real
+Phase 2 pilot data showing consumer-side density. `BUSINESS_MODEL.md`, the
+PRD non-goals section, `FEATURE_LIST.md`, and `COMPETITOR_ANALYSIS.md` still
+describe the pre-2026-07-04 no-marketplace position and haven't been rewritten
+yet — treat this entry as superseding them on the *concept* (marketplace is
+now planned, not rejected) until someone does a full consistency pass across
+those four docs too.
 
 ## Who to Ask
 
