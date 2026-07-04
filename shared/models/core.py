@@ -18,8 +18,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Numeric, String, Text, Enum as SAEnum,
-    Index, func,
+    BigInteger, Boolean, DateTime, ForeignKey, Identity, Numeric, String, Text,
+    Enum as SAEnum, Index, UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -181,10 +181,19 @@ class CreditLedgerEntry(Base):
     new row with the delta and the resulting balance_after. This is a hard
     rule (concurrency safety + audit trail for a billing-adjacent table),
     not a style preference. See CLAUDE.md principle #5.
+
+    `seq` (not `created_at`/`id`) is the authoritative "most recent entry"
+    ordering: Postgres' `now()` returns the SAME value for every statement
+    within one transaction, and `id` is a random UUID with no relationship
+    to insertion order — a caught-in-testing bug where crediting the same
+    business multiple times inside one transaction picked the wrong "latest"
+    balance. `seq` is a real Postgres IDENTITY column, monotonic regardless
+    of transaction timing.
     """
     __tablename__ = "credit_ledger"
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False, unique=True)
     business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
     credit_type: Mapped[CreditType] = mapped_column(SAEnum(CreditType), nullable=False)
     delta: Mapped[float] = mapped_column(Numeric, nullable=False)  # +recharge / -consumption
@@ -195,4 +204,150 @@ class CreditLedgerEntry(Base):
 
     __table_args__ = (
         Index("ix_credit_ledger_business_created", "business_id", "created_at"),
+    )
+
+
+class UserRole(str, enum.Enum):
+    smb_owner = "smb_owner"
+    agency_admin = "agency_admin"
+    agency_viewer = "agency_viewer"
+
+
+class User(Base):
+    """
+    PRESENCE's own login identity — distinct from platform-connection auth
+    (GBP/Meta/WhatsApp OAuth), which lives on PlatformConnection instead.
+    Exactly one of business_id/agency_id is expected to be set depending on
+    role (smb_owner -> business_id, agency_admin/viewer -> agency_id).
+    """
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agencies.id"))
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RefreshToken(Base):
+    """Lets a refresh token be revoked server-side without a JWT blocklist."""
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WhatsAppContact(Base):
+    """
+    Customer module, minimal scope per CLAUDE.md: no consumer account/login
+    system — just the WhatsApp contact list for campaign targeting.
+    """
+    __tablename__ = "whatsapp_contacts"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    phone_e164: Mapped[str] = mapped_column(String, nullable=False)
+    opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
+    tags: Mapped[dict | None] = mapped_column(JSONB)
+    # Tracks the WhatsApp 24hr free service window locally (from inbound
+    # webhooks) rather than round-tripping to the BSP on every send
+    # decision — see gallabox.py's get_conversation_status.
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("business_id", "phone_e164", name="uq_whatsapp_contact_business_phone"),
+    )
+
+
+class Campaign(Base):
+    """
+    category mirrors adapters.whatsapp.base.MessageCategory.value but is
+    stored as a plain string here (not the services-layer enum) so
+    shared/models never imports from services/*, per the clean-separation
+    rule in CODING_STANDARDS.md.
+    """
+    __tablename__ = "campaigns"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    template_name: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CampaignMessage(Base):
+    __tablename__ = "campaign_messages"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("campaigns.id"), nullable=False)
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("whatsapp_contacts.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String, default="queued")
+    provider_message_id: Mapped[str | None] = mapped_column(String)
+    cost_inr: Mapped[float | None] = mapped_column(Numeric)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_campaign_messages_campaign", "campaign_id"),
+    )
+
+
+class NotificationEntry(Base):
+    """In-app + email only for v1 — SMS/push deferred, per 06_MODULES/NOTIFICATIONS.md."""
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    agency_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agencies.id"))
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSONB)
+    channel: Mapped[str] = mapped_column(String, nullable=False)  # in_app|email
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_notifications_business_created", "business_id", "created_at"),
+    )
+
+
+class Subscription(Base):
+    """
+    Billing scope is subscription + credit recharge ONLY — embedded/
+    commission payment collection is explicitly deferred, per
+    06_MODULES/PAYMENTS.md.
+    """
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    razorpay_subscription_id: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="created")
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduledPost(Base):
+    """Social module, narrow scope: read + basic scheduled posting only, no ads management."""
+    __tablename__ = "scheduled_posts"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    platform: Mapped[str] = mapped_column(String, nullable=False)  # meta|instagram
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    media_url: Mapped[str | None] = mapped_column(String)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_scheduled_posts_business_scheduled", "business_id", "scheduled_at"),
     )

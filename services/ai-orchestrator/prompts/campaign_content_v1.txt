@@ -1,0 +1,5 @@
+Write a short, friendly WhatsApp marketing message for ${business_name} (a ${business_category} business) promoting the following:
+
+${campaign_topic}
+
+Keep it under 300 characters, include a clear call to action, and use a warm, conversational tone appropriate for an Indian SMB's regular customers. Do not use excessive emoji or ALL CAPS.
