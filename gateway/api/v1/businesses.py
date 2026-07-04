@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gateway.db import get_db
 from gateway.security import get_current_user
 from gateway.tenancy import require_business_access
+from gateway.vault import get_vault_client
 from shared.models.core import (
     Business,
     BusinessCategory,
@@ -28,6 +29,7 @@ from shared.models.core import (
     SyncStatus,
     User,
 )
+from shared.secrets.vault_client import VaultClient, VaultError
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
 
@@ -58,7 +60,11 @@ class ConnectionCreate(BaseModel):
     platform: PlatformName
     provider: str | None = None
     external_id: str | None = None
-    access_token_ref: str | None = None
+    # Raw token, write-only -- never echoed back (ConnectionResponse omits
+    # it) and never stored in Postgres. Immediately written to Vault and
+    # replaced with a KV path reference before the row is persisted, per
+    # SECURITY_ARCHITECTURE.md's Secrets Management section.
+    access_token: str | None = None
 
 
 class ConnectionResponse(BaseModel):
@@ -112,17 +118,32 @@ async def create_connection(
     body: ConnectionCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
+    vault: VaultClient = Depends(get_vault_client),
 ) -> PlatformConnection:
     await require_business_access(business_id, user, db)
+
+    access_token_ref = None
+    if body.access_token:
+        access_token_ref = VaultClient.ref_for(business_id, body.platform.value)
+        try:
+            await vault.store(access_token_ref, body.access_token)
+        except VaultError as exc:
+            # Degrade, don't silently persist a connection that looks
+            # healthy but has no retrievable token (CLAUDE.md principle #1
+            # applied to vault-dependence) -- fail the request instead.
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Could not store platform credential in vault",
+            ) from exc
 
     connection = PlatformConnection(
         business_id=business_id,
         platform=body.platform,
         provider=body.provider,
         external_id=body.external_id,
-        access_token_ref=body.access_token_ref,
+        access_token_ref=access_token_ref,
         sync_status=SyncStatus.healthy,
-        last_synced_at=datetime.now(UTC) if body.access_token_ref else None,
+        last_synced_at=datetime.now(UTC) if access_token_ref else None,
     )
     db.add(connection)
     await db.commit()

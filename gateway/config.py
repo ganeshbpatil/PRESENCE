@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     meta_app_secret: str = ""
     meta_webhook_verify_token: str = ""
 
+    vault_addr: str = "http://vault:8200"
+    vault_role_id: str = ""
+    vault_secret_id: str = ""
+    vault_kv_mount: str = "presence-secrets"
+
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""
