@@ -113,6 +113,19 @@ async def get_current_user(
     return user
 
 
+def assert_valid_invite_code(invite_code: str | None) -> None:
+    """Gate for the otherwise-unauthenticated Business/Agency create
+    endpoints (both must exist before a user can sign up referencing
+    them). settings.signup_invite_code empty means the check is skipped
+    -- set it in production so the public API can't spin up arbitrary
+    shells."""
+    settings = get_settings()
+    if not settings.signup_invite_code:
+        return
+    if invite_code != settings.signup_invite_code:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid invite code")
+
+
 def require_role(*allowed_roles: UserRole):
     """FastAPI dependency factory for RBAC per SECURITY_ARCHITECTURE.md's
     v1 role set (SMB Owner, Agency Admin, Agency Viewer)."""

@@ -33,6 +33,7 @@ async def _signup_owner(client: AsyncClient) -> tuple[str, dict]:
             "name": f"Connection Test {uuid.uuid4()}",
             "category": BusinessCategory.salon_spa_gym.value,
             "tier": BusinessTier.starter.value,
+            "invite_code": get_settings().signup_invite_code,
         },
     )
     business_id = biz.json()["id"]

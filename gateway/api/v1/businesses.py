@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway.db import get_db
-from gateway.security import get_current_user
+from gateway.security import assert_valid_invite_code, get_current_user
 from gateway.tenancy import require_business_access, require_business_write_access
 from gateway.vault import get_vault_client
 from shared.models.core import (
@@ -41,6 +41,9 @@ class BusinessCreate(BaseModel):
     agency_id: uuid.UUID | None = None
     pincode: str | None = None
     area: str | None = None
+    # Required when settings.signup_invite_code is set (production) --
+    # see gateway/security.py's assert_valid_invite_code.
+    invite_code: str | None = None
 
 
 class BusinessUpdate(BaseModel):
@@ -96,8 +99,10 @@ class ConnectionResponse(BaseModel):
 async def create_business(body: BusinessCreate, db: AsyncSession = Depends(get_db)) -> Business:
     # Signup happens before a user exists (a business must exist first for
     # smb_owner signup to reference), so this endpoint is intentionally
-    # unauthenticated — tightening this (e.g. an invite-code flow) is a
-    # follow-up once onboarding is designed, not silently skipped here.
+    # unauthenticated -- gated instead by a shared invite code (see
+    # gateway/security.py's assert_valid_invite_code) so the public API
+    # can't be used to spin up arbitrary business shells in production.
+    assert_valid_invite_code(body.invite_code)
     business = Business(
         name=body.name,
         category=body.category,

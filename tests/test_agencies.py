@@ -6,6 +6,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from gateway.config import get_settings
 from gateway.db import async_session_factory
 from gateway.main import app
 from shared.models.core import Agency, BusinessCategory, BusinessTier
@@ -38,6 +39,7 @@ async def test_agency_admin_can_list_and_export_businesses(client: AsyncClient):
             "category": BusinessCategory.fnb.value,
             "tier": BusinessTier.growth.value,
             "agency_id": str(agency_id),
+            "invite_code": get_settings().signup_invite_code,
         },
     )
     assert biz.status_code == 201, biz.text
@@ -74,6 +76,7 @@ async def test_smb_owner_cannot_access_agency_console(client: AsyncClient):
             "name": f"Owner Biz {uuid.uuid4()}",
             "category": BusinessCategory.salon_spa_gym.value,
             "tier": BusinessTier.starter.value,
+            "invite_code": get_settings().signup_invite_code,
         },
     )
     business_id = biz.json()["id"]
