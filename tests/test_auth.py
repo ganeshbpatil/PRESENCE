@@ -8,6 +8,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from gateway.config import get_settings
 from gateway.main import app
 from shared.models.core import BusinessCategory, BusinessTier
 
@@ -26,6 +27,7 @@ async def _create_business(client: AsyncClient) -> str:
             "name": f"Test Salon {uuid.uuid4()}",
             "category": BusinessCategory.salon_spa_gym.value,
             "tier": BusinessTier.starter.value,
+            "invite_code": get_settings().signup_invite_code,
         },
     )
     assert resp.status_code == 201, resp.text

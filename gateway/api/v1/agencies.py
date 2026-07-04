@@ -11,17 +11,20 @@ from __future__ import annotations
 import csv
 import io
 import uuid
+from datetime import datetime
+from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway.db import get_db
-from gateway.security import get_current_user
+from gateway.security import assert_valid_invite_code, get_current_user
 from gateway.tenancy import require_agency_access
 from shared.models.core import (
+    Agency,
     AttributionCorrelation,
     Business,
     Review,
@@ -39,6 +42,66 @@ class BusinessSummary(BaseModel):
     subscription_status: str | None
 
     model_config = {"from_attributes": True}
+
+
+class AgencyCreate(BaseModel):
+    name: str
+    is_white_label: bool = False
+    revenue_share_pct: Decimal | None = None
+    # Required when settings.signup_invite_code is set (production) --
+    # see gateway/security.py's assert_valid_invite_code.
+    invite_code: str | None = None
+
+
+class AgencyUpdate(BaseModel):
+    # All optional -- PATCH semantics, only set fields are touched.
+    name: str | None = None
+    is_white_label: bool | None = None
+    branding_config: dict | None = None
+    revenue_share_pct: Decimal | None = None
+
+
+class AgencyResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_white_label: bool
+    branding_config: dict | None
+    revenue_share_pct: Decimal | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@router.post("", response_model=AgencyResponse, status_code=status.HTTP_201_CREATED)
+async def create_agency(body: AgencyCreate, db: AsyncSession = Depends(get_db)) -> Agency:
+    # Mirrors businesses.py's create_business: unauthenticated by design
+    # (an agency must exist before agency_admin signup can reference it),
+    # gated by the same shared invite code instead.
+    assert_valid_invite_code(body.invite_code)
+    agency = Agency(
+        name=body.name,
+        is_white_label=body.is_white_label,
+        revenue_share_pct=body.revenue_share_pct,
+    )
+    db.add(agency)
+    await db.commit()
+    await db.refresh(agency)
+    return agency
+
+
+@router.patch("/{agency_id}", response_model=AgencyResponse)
+async def update_agency(
+    agency_id: uuid.UUID,
+    body: AgencyUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Agency:
+    agency = await require_agency_access(agency_id, user, db, write=True)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(agency, field, value)
+    await db.commit()
+    await db.refresh(agency)
+    return agency
 
 
 @router.get("/{agency_id}/businesses", response_model=list[BusinessSummary])

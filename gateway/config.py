@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     # means no cross-origin frontend is configured yet.
     cors_allowed_origins: str = ""
 
+    # Shared secret required to create a Business or Agency (both are
+    # otherwise-unauthenticated bootstrap endpoints -- a business/agency
+    # must exist before a user can sign up referencing it). Empty means
+    # the check is skipped entirely -- set this in production so the
+    # public API can't be used to spin up arbitrary shells. Distribute
+    # this one code to whoever should be able to onboard an
+    # agency/business (sales calls, agency partners); rotate by changing
+    # the env var.
+    signup_invite_code: str = ""
+
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]

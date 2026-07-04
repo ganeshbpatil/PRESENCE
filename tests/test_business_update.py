@@ -6,6 +6,7 @@ import uuid
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from gateway.config import get_settings
 from gateway.db import async_session_factory
 from gateway.main import app
 from shared.models.core import Agency, Business, BusinessCategory, BusinessTier
@@ -25,6 +26,7 @@ async def _signup_owner(client: AsyncClient) -> tuple[str, dict]:
             "name": f"Edit Test {uuid.uuid4()}",
             "category": BusinessCategory.salon_spa_gym.value,
             "tier": BusinessTier.starter.value,
+            "invite_code": get_settings().signup_invite_code,
         },
     )
     business_id = biz.json()["id"]
