@@ -160,7 +160,7 @@ async def create_connection(
     if body.access_token:
         access_token_ref = VaultClient.ref_for(business_id, body.platform.value)
         try:
-            await vault.store(access_token_ref, body.access_token)
+            await vault.store(access_token_ref, access_token=body.access_token)
         except VaultError as exc:
             # Degrade, don't silently persist a connection that looks
             # healthy but has no retrievable token (CLAUDE.md principle #1

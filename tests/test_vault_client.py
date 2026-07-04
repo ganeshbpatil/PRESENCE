@@ -94,8 +94,46 @@ async def test_store_writes_token_under_expected_path(monkeypatch):
         return httpx.Response(200, json={"data": {"version": 1}})
 
     vault = _vault(monkeypatch, handler)
-    await vault.store("platform-connections/biz-2/meta", "raw-token-to-store")
+    await vault.store("platform-connections/biz-2/meta", access_token="raw-token-to-store")
     assert b"raw-token-to-store" in written["body"]
+
+
+@pytest.mark.asyncio
+async def test_store_writes_multiple_fields_in_one_call(monkeypatch):
+    """KV v2 replaces the whole secret version on write -- access_token and
+    refresh_token must go in the SAME store() call or the second call
+    would silently wipe the first (see store()'s docstring)."""
+    written = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/auth/approle/login":
+            return _approle_login_response(request)
+        written["body"] = request.read()
+        return httpx.Response(200, json={"data": {"version": 1}})
+
+    vault = _vault(monkeypatch, handler)
+    await vault.store(
+        "platform-connections/biz-3/gbp",
+        access_token="access-tok",
+        refresh_token="refresh-tok",
+    )
+    assert b"access-tok" in written["body"]
+    assert b"refresh-tok" in written["body"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_reads_a_named_key_other_than_access_token(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/auth/approle/login":
+            return _approle_login_response(request)
+        return httpx.Response(
+            200,
+            json={"data": {"data": {"access_token": "a", "refresh_token": "r"}}},
+        )
+
+    vault = _vault(monkeypatch, handler)
+    token = await vault.resolve("platform-connections/biz-3/gbp", key="refresh_token")
+    assert token == "r"
 
 
 @pytest.mark.asyncio

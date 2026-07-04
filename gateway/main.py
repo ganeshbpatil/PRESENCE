@@ -18,6 +18,7 @@ from gateway.api.v1 import billing as billing_v1
 from gateway.api.v1 import businesses as businesses_v1
 from gateway.api.v1 import health as health_v1
 from gateway.api.v1 import notifications as notifications_v1
+from gateway.api.v1 import oauth as oauth_v1
 from gateway.api.v1 import reviews as reviews_v1
 from gateway.api.v1 import social as social_v1
 from gateway.api.v1 import users as users_v1
@@ -50,6 +51,7 @@ app.include_router(social_v1.router, prefix="/api/v1")
 app.include_router(notifications_v1.router, prefix="/api/v1")
 app.include_router(agencies_v1.router, prefix="/api/v1")
 app.include_router(users_v1.router, prefix="/api/v1")
+app.include_router(oauth_v1.router, prefix="/api/v1")
 app.include_router(metrics_v1.router)
 
 
