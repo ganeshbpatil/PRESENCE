@@ -1,4 +1,4 @@
-"""POST /agencies + PATCH /agencies/{id}."""
+"""POST /agencies + GET/PATCH /agencies/{id}."""
 from __future__ import annotations
 
 import uuid
@@ -59,6 +59,26 @@ async def test_create_agency_returns_expected_shape(client: AsyncClient):
     assert body["is_white_label"] is True
     assert body["revenue_share_pct"] == "12.50"
     assert body["branding_config"] is None
+
+
+@pytest.mark.asyncio
+async def test_agency_admin_can_read_own_agency(client: AsyncClient):
+    agency_id = await _create_agency(client, name="Readable Agency")
+    headers = await _signup_admin(client, agency_id)
+
+    resp = await client.get(f"/api/v1/agencies/{agency_id}", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["name"] == "Readable Agency"
+
+
+@pytest.mark.asyncio
+async def test_cannot_read_a_different_agency(client: AsyncClient):
+    agency_id = await _create_agency(client)
+    other_agency_id = await _create_agency(client)
+    headers = await _signup_admin(client, agency_id)
+
+    resp = await client.get(f"/api/v1/agencies/{other_agency_id}", headers=headers)
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

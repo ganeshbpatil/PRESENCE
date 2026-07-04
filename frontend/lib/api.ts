@@ -69,6 +69,13 @@ export const getMe = (token: string) =>
 
 // --- Businesses ---
 
+export type BusinessCategory =
+  | "salon_spa_gym"
+  | "clinic_healthcare"
+  | "fnb"
+  | "retail_fashion_jewellery";
+export type BusinessTier = "starter" | "growth" | "scale" | "agency";
+
 export interface BusinessResponse {
   id: string;
   name: string;
@@ -100,16 +107,175 @@ export interface ConnectionResponse {
 export const getBusiness = (token: string, businessId: string) =>
   request<BusinessResponse>(`/api/v1/businesses/${businessId}`, { token });
 
+export const createBusiness = (
+  token: string | null,
+  body: {
+    name: string;
+    category: BusinessCategory;
+    tier: BusinessTier;
+    agency_id?: string;
+    pincode?: string;
+    area?: string;
+    invite_code?: string;
+  }
+) => request<BusinessResponse>("/api/v1/businesses", { method: "POST", body, token });
+
+export const updateBusiness = (
+  token: string,
+  businessId: string,
+  body: Partial<{
+    name: string;
+    category: BusinessCategory;
+    tier: BusinessTier;
+    pincode: string;
+    area: string;
+    subscription_status: string;
+  }>
+) =>
+  request<BusinessResponse>(`/api/v1/businesses/${businessId}`, {
+    method: "PATCH",
+    body,
+    token,
+  });
+
 export const getConnectionsHealth = (token: string, businessId: string) =>
   request<ConnectionResponse[]>(
     `/api/v1/businesses/${businessId}/connections/health`,
     { token }
   );
 
+export const createConnection = (
+  token: string,
+  businessId: string,
+  body: {
+    platform: "gbp" | "meta" | "whatsapp";
+    provider?: string;
+    external_id?: string;
+    access_token?: string;
+  }
+) =>
+  request<ConnectionResponse>(`/api/v1/businesses/${businessId}/connections`, {
+    method: "POST",
+    body,
+    token,
+  });
+
 export const getAgencyBusinesses = (token: string, agencyId: string) =>
   request<BusinessSummary[]>(`/api/v1/agencies/${agencyId}/businesses`, {
     token,
   });
+
+// --- Agencies ---
+
+export interface AgencyResponse {
+  id: string;
+  name: string;
+  is_white_label: boolean;
+  branding_config: Record<string, unknown> | null;
+  revenue_share_pct: string | null;
+  created_at: string;
+}
+
+export const createAgency = (body: {
+  name: string;
+  is_white_label?: boolean;
+  revenue_share_pct?: string;
+  invite_code?: string;
+}) => request<AgencyResponse>("/api/v1/agencies", { method: "POST", body });
+
+export const getAgency = (token: string, agencyId: string) =>
+  request<AgencyResponse>(`/api/v1/agencies/${agencyId}`, { token });
+
+export const updateAgency = (
+  token: string,
+  agencyId: string,
+  body: Partial<{
+    name: string;
+    is_white_label: boolean;
+    branding_config: Record<string, unknown>;
+    revenue_share_pct: string;
+  }>
+) =>
+  request<AgencyResponse>(`/api/v1/agencies/${agencyId}`, {
+    method: "PATCH",
+    body,
+    token,
+  });
+
+// --- Users ---
+
+export interface UserSummary {
+  id: string;
+  email: string;
+  role: UserRole;
+  business_id: string | null;
+  agency_id: string | null;
+  is_active: boolean;
+}
+
+export const getBusinessUsers = (token: string, businessId: string) =>
+  request<UserSummary[]>(`/api/v1/businesses/${businessId}/users`, { token });
+
+export const getAgencyUsers = (token: string, agencyId: string) =>
+  request<UserSummary[]>(`/api/v1/agencies/${agencyId}/users`, { token });
+
+export const updateUser = (
+  token: string,
+  userId: string,
+  body: Partial<{
+    role: UserRole;
+    business_id: string;
+    agency_id: string;
+    is_active: boolean;
+  }>
+) => request<UserSummary>(`/api/v1/users/${userId}`, { method: "PATCH", body, token });
+
+// --- WhatsApp ---
+
+export interface ContactResponse {
+  id: string;
+  business_id: string;
+  phone_e164: string;
+  opt_in: boolean;
+  tags: Record<string, unknown> | null;
+}
+
+export const getContacts = (token: string, businessId: string) =>
+  request<ContactResponse[]>(`/api/v1/businesses/${businessId}/contacts`, {
+    token,
+  });
+
+export const createContact = (
+  token: string,
+  body: { business_id: string; phone_e164: string; opt_in?: boolean }
+) => request<ContactResponse>("/api/v1/contacts", { method: "POST", body, token });
+
+export interface CampaignResponse {
+  id: string;
+  business_id: string;
+  name: string;
+  template_name: string;
+  category: string;
+  status: string;
+}
+
+export interface CampaignSendSummary {
+  campaign: CampaignResponse;
+  sent: number;
+  failed: number;
+  skipped_insufficient_credit: number;
+}
+
+export const createCampaign = (
+  token: string,
+  body: {
+    business_id: string;
+    name: string;
+    template_name: string;
+    category: "marketing" | "utility" | "authentication";
+    contact_ids?: string[];
+  }
+) => request<CampaignSendSummary>("/api/v1/campaigns", { method: "POST", body, token });
 
 // --- Reviews ---
 
@@ -125,6 +291,29 @@ export interface ReviewResponse {
 
 export const getReviews = (token: string, businessId: string) =>
   request<ReviewResponse[]>(`/api/v1/businesses/${businessId}/reviews`, {
+    token,
+  });
+
+export const createReview = (
+  token: string,
+  businessId: string,
+  body: { platform: "gbp" | "meta" | "whatsapp"; rating?: number; text?: string }
+) =>
+  request<ReviewResponse>(`/api/v1/businesses/${businessId}/reviews`, {
+    method: "POST",
+    body,
+    token,
+  });
+
+export const draftReviewResponse = (token: string, reviewId: string) =>
+  request<{ review: ReviewResponse; cache_hit: boolean }>(
+    `/api/v1/reviews/${reviewId}/draft-response`,
+    { method: "POST", token }
+  );
+
+export const sendReviewResponse = (token: string, reviewId: string) =>
+  request<ReviewResponse>(`/api/v1/reviews/${reviewId}/send-response`, {
+    method: "POST",
     token,
   });
 
@@ -147,6 +336,17 @@ export const getScheduledPosts = (token: string, businessId: string) =>
     { token }
   );
 
+export const createScheduledPost = (
+  token: string,
+  businessId: string,
+  body: { platform: string; content: string; media_url?: string; scheduled_at: string }
+) =>
+  request<ScheduledPostResponse>(`/api/v1/businesses/${businessId}/social/posts`, {
+    method: "POST",
+    body,
+    token,
+  });
+
 // --- Billing ---
 
 export interface BalanceResponse {
@@ -159,3 +359,67 @@ export const getCreditBalances = (token: string, businessId: string) =>
   request<BalanceResponse[]>(`/api/v1/credit-ledger/${businessId}/balance`, {
     token,
   });
+
+export const rechargeCredit = (
+  token: string,
+  businessId: string,
+  body: { credit_type: "ai" | "whatsapp"; amount: string }
+) =>
+  request<BalanceResponse>(`/api/v1/credit-ledger/${businessId}/recharge`, {
+    method: "POST",
+    body,
+    token,
+  });
+
+export interface SubscriptionResponse {
+  id: string;
+  business_id: string;
+  razorpay_subscription_id: string | null;
+  status: string;
+}
+
+export const createSubscription = (
+  token: string,
+  body: { business_id: string; plan_id: string; total_count?: number }
+) =>
+  request<SubscriptionResponse>("/api/v1/billing/subscriptions", {
+    method: "POST",
+    body,
+    token,
+  });
+
+// --- Attribution ---
+
+export interface AttributionSummary {
+  business_id: string;
+  period_start: string;
+  period_end: string;
+  correlation_score: number | null;
+  signal_completeness_pct: number | null;
+  computed_at: string;
+}
+
+export const getAttributionSummary = (token: string, businessId: string) =>
+  request<AttributionSummary>(`/api/v1/businesses/${businessId}/attribution/summary`, {
+    token,
+  });
+
+export const triggerComputeCorrelation = (
+  token: string,
+  body: { business_id: string; period_start: string; period_end: string }
+) =>
+  request<{ status: string }>("/api/v1/attribution/compute-correlation", {
+    method: "POST",
+    body,
+    token,
+  });
+
+// --- OAuth ---
+
+export interface OAuthStatusResponse {
+  gbp_configured: boolean;
+  meta_configured: boolean;
+}
+
+export const getOAuthStatus = (token: string) =>
+  request<OAuthStatusResponse>("/api/v1/oauth/status", { token });
