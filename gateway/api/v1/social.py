@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gateway.db import get_db
 from gateway.security import get_current_user
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from shared.models.core import ScheduledPost, User
 
 router = APIRouter(tags=["social"])
@@ -54,7 +54,7 @@ async def schedule_post(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ScheduledPost:
-    await require_business_access(business_id, user, db)
+    await require_business_write_access(business_id, user, db)
     post = ScheduledPost(
         business_id=business_id,
         platform=body.platform,

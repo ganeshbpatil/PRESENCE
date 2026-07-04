@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gateway.config import Settings, get_settings
 from gateway.db import get_db
 from gateway.security import get_current_user
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from services.billing import credit_ledger
 from services.billing.credit_ledger import InsufficientCreditError
 from services.notifications.notifier import notify
@@ -93,7 +93,7 @@ async def create_review(
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> Review:
-    await require_business_access(business_id, user, db)
+    await require_business_write_access(business_id, user, db)
     review = Review(
         business_id=business_id,
         platform=body.platform,
@@ -141,7 +141,7 @@ async def draft_response(
     settings: Settings = Depends(get_settings),
 ) -> DraftResponseResult:
     review = await _get_review_or_404(review_id, db)
-    await require_business_access(review.business_id, user, db)
+    await require_business_write_access(review.business_id, user, db)
     business = (
         await db.execute(select(Business).where(Business.id == review.business_id))
     ).scalar_one()
@@ -209,7 +209,7 @@ async def send_response(
     user: User = Depends(get_current_user),
 ) -> Review:
     review = await _get_review_or_404(review_id, db)
-    await require_business_access(review.business_id, user, db)
+    await require_business_write_access(review.business_id, user, db)
 
     if review.ai_drafted_response is None:
         raise HTTPException(

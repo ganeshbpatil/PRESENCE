@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gateway.config import Settings, get_settings
 from gateway.db import get_db
 from gateway.security import get_current_user
-from gateway.tenancy import require_business_access
+from gateway.tenancy import require_business_access, require_business_write_access
 from services.notifications.notifier import notify
 from shared.events import EventType
 from shared.models.core import Campaign, CampaignMessage, User, WhatsAppContact
@@ -96,7 +96,7 @@ async def create_contact(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> WhatsAppContact:
-    await require_business_access(body.business_id, user, db)
+    await require_business_write_access(body.business_id, user, db)
     contact = WhatsAppContact(
         business_id=body.business_id,
         phone_e164=body.phone_e164,
@@ -129,7 +129,7 @@ async def create_campaign(
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> CampaignSendSummary:
-    await require_business_access(body.business_id, user, db)
+    await require_business_write_access(body.business_id, user, db)
 
     campaign = Campaign(
         business_id=body.business_id,
