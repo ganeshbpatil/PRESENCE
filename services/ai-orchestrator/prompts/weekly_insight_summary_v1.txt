@@ -1,0 +1,7 @@
+Summarize this week's performance for the owner of ${business_name}.
+
+Reviews received: ${review_count}
+Average rating this week: ${avg_rating}
+WhatsApp messages sent: ${messages_sent}
+
+Write 2-3 sentences in plain, encouraging language highlighting the single most important trend or thing to pay attention to. Do not restate every number back verbatim -- interpret them.

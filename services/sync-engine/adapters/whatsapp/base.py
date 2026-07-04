@@ -96,11 +96,18 @@ class WhatsAppBSPAdapter(ABC):
         ...
 
     @abstractmethod
-    async def parse_webhook(self, raw_payload: dict, headers: dict) -> InboundMessage | SendResult:
+    async def parse_webhook(self, raw_body: bytes, headers: dict) -> InboundMessage | SendResult:
         """Normalize a provider webhook into our internal shape. Must verify
         webhook signature using the provider's own secret — never trust an
         unverified payload, this is a public-facing endpoint (see
-        docker-compose.yml rate-limit middleware on this route)."""
+        docker-compose.yml rate-limit middleware on this route).
+
+        Takes raw_body (bytes), not a pre-parsed dict: HMAC signature
+        verification must run over the exact bytes the provider signed —
+        re-serializing an already-parsed dict is not guaranteed to
+        reproduce the same byte stream (key order, whitespace), which would
+        make verification silently unreliable. Parse JSON internally, after
+        verifying."""
         ...
 
     @abstractmethod

@@ -22,9 +22,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import string
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+
+import httpx
+from prometheus_client import Counter
+
+AI_CACHE_HITS = Counter("ai_cache_hit_total", "AI orchestrator cache hits")
+AI_CACHE_MISSES = Counter("ai_cache_miss_total", "AI orchestrator cache misses")
+
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_OPENROUTER_MODEL = "anthropic/claude-3-haiku"  # cheap default -- margin lever per AI.md
+_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1"
+_ANTHROPIC_MODEL = "claude-3-haiku-20240307"
+_ANTHROPIC_API_VERSION = "2023-06-01"
+
+
+class AIProviderError(Exception):
+    pass
 
 
 class AIProvider(str, Enum):
@@ -84,24 +104,32 @@ class AIOrchestrator:
     and optimized in one place as usage scales.
     """
 
-    def __init__(self, cache: CacheBackend, default_provider: AIProvider, cache_ttl_seconds: int):
+    def __init__(
+        self,
+        cache: CacheBackend,
+        default_provider: AIProvider,
+        cache_ttl_seconds: int,
+        openrouter_api_key: str = "",
+        anthropic_api_key: str = "",
+    ):
         self._cache = cache
         self._default_provider = default_provider
         self._cache_ttl = cache_ttl_seconds
-        # cache_hit_total / cache_miss_total should be Prometheus counters,
-        # incremented in complete() below — wire this to the observability
-        # stack in docs/build-roadmap.md Stage 11 before going to pilot.
+        self._openrouter_api_key = openrouter_api_key
+        self._anthropic_api_key = anthropic_api_key
 
     async def complete(self, req: AIRequest) -> AIResponse:
         if req.cacheable:
             key = _cache_key(req)
             cached = await self._cache.get(key)
             if cached is not None:
+                AI_CACHE_HITS.inc()
                 return AIResponse(
                     text=cached, provider_used=self._default_provider,
                     cache_hit=True, tokens_in=None, tokens_out=None,
                     cost_estimate_usd=0.0,
                 )
+            AI_CACHE_MISSES.inc()
 
         text, tokens_in, tokens_out, cost = await self._call_provider(req)
 
@@ -114,9 +142,82 @@ class AIOrchestrator:
         )
 
     async def _call_provider(self, req: AIRequest) -> tuple[str, int, int, float]:
-        # TODO: render the template from prompts/ using req.variables, call
-        # the configured provider (OpenRouter primary, Anthropic direct as
-        # fallback per AI_DEFAULT_PROVIDER), return (text, tokens_in,
-        # tokens_out, cost_estimate_usd). Provider-switch logic belongs here
-        # ONLY — never scattered into feature code.
-        raise NotImplementedError("Wire provider call here")
+        prompt_text = _render_prompt(req.prompt_template_id, req.variables)
+
+        providers_in_order = [self._default_provider] + [
+            p for p in AIProvider if p != self._default_provider
+        ]
+        last_error: Exception | None = None
+        for provider in providers_in_order:
+            try:
+                if provider == AIProvider.OPENROUTER:
+                    return await self._call_openrouter(prompt_text)
+                return await self._call_anthropic(prompt_text)
+            except AIProviderError as exc:
+                last_error = exc
+                continue  # fall through to the next provider (fallback)
+
+        raise AIProviderError(f"All AI providers failed: {last_error}") from last_error
+
+    async def _call_openrouter(self, prompt_text: str) -> tuple[str, int, int, float]:
+        if not self._openrouter_api_key:
+            raise AIProviderError("OPENROUTER_API_KEY not configured")
+
+        async with httpx.AsyncClient(base_url=_OPENROUTER_BASE_URL, timeout=20.0) as client:
+            resp = await client.post(
+                "/chat/completions",
+                headers={"Authorization": f"Bearer {self._openrouter_api_key}"},
+                json={
+                    "model": _OPENROUTER_MODEL,
+                    "messages": [{"role": "user", "content": prompt_text}],
+                },
+            )
+        if resp.status_code >= 300:
+            raise AIProviderError(f"OpenRouter call failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        tokens_in = usage.get("prompt_tokens", 0)
+        tokens_out = usage.get("completion_tokens", 0)
+        cost = float(usage.get("total_cost", 0.0) or 0.0)
+        return text, tokens_in, tokens_out, cost
+
+    async def _call_anthropic(self, prompt_text: str) -> tuple[str, int, int, float]:
+        if not self._anthropic_api_key:
+            raise AIProviderError("ANTHROPIC_API_KEY not configured")
+
+        async with httpx.AsyncClient(base_url=_ANTHROPIC_BASE_URL, timeout=20.0) as client:
+            resp = await client.post(
+                "/messages",
+                headers={
+                    "x-api-key": self._anthropic_api_key,
+                    "anthropic-version": _ANTHROPIC_API_VERSION,
+                },
+                json={
+                    "model": _ANTHROPIC_MODEL,
+                    "max_tokens": 512,
+                    "messages": [{"role": "user", "content": prompt_text}],
+                },
+            )
+        if resp.status_code >= 300:
+            raise AIProviderError(f"Anthropic call failed: {resp.status_code} {resp.text}")
+
+        data = resp.json()
+        text = "".join(block.get("text", "") for block in data.get("content", []))
+        usage = data.get("usage", {})
+        tokens_in = usage.get("input_tokens", 0)
+        tokens_out = usage.get("output_tokens", 0)
+        # Anthropic doesn't return a cost figure directly; a real cost
+        # estimate needs a per-model $/token rate table (same pattern as
+        # the WhatsApp adapter's estimate_cost_inr) -- not built in this
+        # pass, so this is left at 0.0 rather than guessed.
+        return text, tokens_in, tokens_out, 0.0
+
+
+def _render_prompt(template_id: str, variables: dict) -> str:
+    path = _PROMPTS_DIR / f"{template_id}.txt"
+    if not path.exists():
+        raise AIProviderError(f"Unknown prompt template: {template_id!r}")
+    template = string.Template(path.read_text())
+    return template.safe_substitute(**{k: str(v) for k, v in variables.items()})

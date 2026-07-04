@@ -21,3 +21,10 @@ app = Celery(
 )
 app.conf.timezone = "UTC"
 app.conf.enable_utc = True
+app.autodiscover_tasks(["gateway"])
+app.conf.beat_schedule = {
+    "publish-due-social-posts": {
+        "task": "social.publish_due_posts",
+        "schedule": 300.0,  # every 5 minutes -- scheduled posting is not latency-sensitive
+    },
+}
