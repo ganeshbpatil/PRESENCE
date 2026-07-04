@@ -8,6 +8,7 @@ business logic belongs in this file or in route handlers generally.
 from __future__ import annotations
 
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 
 from gateway import metrics as metrics_v1
 from gateway.api.v1 import agencies as agencies_v1
@@ -20,8 +21,22 @@ from gateway.api.v1 import notifications as notifications_v1
 from gateway.api.v1 import reviews as reviews_v1
 from gateway.api.v1 import social as social_v1
 from gateway.api.v1 import whatsapp as whatsapp_v1
+from gateway.config import get_settings
 
 app = FastAPI(title="PRESENCE Gateway", version="0.1.0")
+
+_cors_origins = get_settings().cors_allowed_origins_list
+if _cors_origins:
+    # Only the admin-panel frontend's own origin(s) need this -- public
+    # webhook endpoints (WhatsApp/Meta/Razorpay) are server-to-server and
+    # never go through a browser, so they're unaffected either way.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(health_v1.router, prefix="/api/v1")
 app.include_router(auth_v1.router, prefix="/api/v1")
