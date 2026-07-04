@@ -53,13 +53,27 @@ the trade-off to Ganesh first:
 ## Current State
 
 <!-- UPDATE THIS SECTION EVERY SESSION -->
-- Phase: 0 (pre-build, scaffolding only)
-- Last completed: Repo bootstrap, schema draft, BSP adapter interface
+- Phase: 0 (pre-PMF), but core modules are implemented, not just scaffolded
+- Last completed: JWT auth, Razorpay billing + append-only credit ledger,
+  attribution-engine v0 correlation (proxy signals), Gallabox WhatsApp
+  webhook/campaign send, Meta social adapter (insights + basic posting),
+  review-response drafting via ai-orchestrator, in-app/email notifications.
+  Alembic migrations for all of the above. 36 passing tests. Deployed live
+  at https://presence.srv1000510.hstgr.cloud/ (merged via PR #2).
 - In progress: —
-- Next up: Alembic migrations against real Postgres instance, first Gallabox
-  adapter implementation, attribution v0 signal capture (proxy signals only —
-  see docs/build-roadmap.md Stage 1.3)
-- Known issues / tech debt: —
+- Next up: wire up a real secrets vault for platform access tokens (Meta
+  adapter currently takes a raw token — see
+  services/sync-engine/adapters/social/meta.py's module docstring for the
+  flagged gap against SECURITY_ARCHITECTURE.md); configure the GitHub
+  Actions VPS_* secrets so the CI/CD auto-deploy pipeline actually runs
+  (currently unconfigured — deploy-staging/production jobs fail with
+  "missing server host"; the live site is being updated by hand via
+  `docker compose` on the VPS instead)
+- Known issues / tech debt: CI/CD deploy-staging and deploy-production jobs
+  fail on every push to main because the required repo secrets (VPS_HOST,
+  VPS_USER, VPS_SSH_KEY, VPS_STAGING_DIR, VPS_PRODUCTION_DIR) were never
+  added — test/build jobs still pass and gate merges correctly, only the
+  deploy step is a no-op failure right now
 - Blocked on: Phase 0 validation research (Pune census, SMB churn calls,
   agency pre-sell) — do not over-invest in features that depend on unvalidated
   segment/pricing assumptions until Phase 0 exit criteria are met
