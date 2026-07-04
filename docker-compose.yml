@@ -69,7 +69,13 @@ services:
     volumes:
       - presence-vault-data:/vault/data
       - ./vault/config.hcl:/vault/config/config.hcl:ro
-    command: server -config=/vault/config/config.hcl
+    # No explicit -config flag: the official image's entrypoint already
+    # injects "-config=/vault/config" (the whole directory) for the
+    # `server` subcommand -- adding our own -config pointed at the same
+    # file too gives Vault two listener stanzas both binding :8200
+    # ("address already in use"). Just "server" lets the entrypoint's
+    # default directory-scan pick up vault/config.hcl on its own.
+    command: server
     networks:
       - presence-internal
     healthcheck:
