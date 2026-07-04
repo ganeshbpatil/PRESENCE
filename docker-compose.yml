@@ -106,7 +106,16 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=traefik-public"
-      - "traefik.http.routers.presence-api.rule=Host(`${PRESENCE_API_DOMAIN}`)"
+      # Path-scoped, not a bare Host() match: presence-frontend below is a
+      # Host()-only catch-all on the same domain, so this router needs to
+      # win on every path the API actually owns, or all requests would
+      # fall through to the frontend container instead. Traefik breaks
+      # rule-priority ties by rule length, and this rule is already the
+      # longer/more specific one, but the explicit "priority" labels below
+      # make the intended precedence unambiguous rather than relying on
+      # that tiebreak.
+      - "traefik.http.routers.presence-api.rule=Host(`${PRESENCE_API_DOMAIN}`) && (PathPrefix(`/api`) || Path(`/healthz`) || PathPrefix(`/docs`) || Path(`/openapi.json`) || PathPrefix(`/redoc`) || PathPrefix(`/metrics`))"
+      - "traefik.http.routers.presence-api.priority=100"
       - "traefik.http.routers.presence-api.entrypoints=websecure"
       - "traefik.http.routers.presence-api.tls.certresolver=letsencrypt"
       - "traefik.http.services.presence-api.loadbalancer.server.port=8000"
@@ -115,6 +124,26 @@ services:
       - "traefik.http.middlewares.presence-ratelimit.ratelimit.average=100"
       - "traefik.http.middlewares.presence-ratelimit.ratelimit.burst=50"
       - "traefik.http.routers.presence-api.middlewares=presence-ratelimit"
+
+  # Minimal read-only admin panel (frontend/) -- shares this domain with
+  # the API via the path-priority split above: this router is a bare
+  # Host() catch-all (lower priority) for everything the API router above
+  # doesn't claim (/, /login, /businesses/*, /_next/* static assets).
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.presence-frontend.rule=Host(`${PRESENCE_API_DOMAIN}`)"
+      - "traefik.http.routers.presence-frontend.priority=1"
+      - "traefik.http.routers.presence-frontend.entrypoints=websecure"
+      - "traefik.http.routers.presence-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.presence-frontend.loadbalancer.server.port=3000"
 
   celery-worker:
     build:
