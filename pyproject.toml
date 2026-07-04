@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+# These predate this ruff config (Phase 0 scaffold) — not reformatting
+# pre-existing content for style nits unrelated to the code itself.
+[tool.ruff.lint.per-file-ignores]
+"shared/models/core.py" = ["E501", "I001", "UP037"]
+"services/sync-engine/adapters/whatsapp/base.py" = ["E501"]
+"services/sync-engine/adapters/whatsapp/gallabox.py" = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

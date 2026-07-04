@@ -1,0 +1,103 @@
+version: "3.9"
+
+# PRESENCE — isolated stack, joins the existing external Traefik network.
+# Does NOT share Postgres/Redis with AgencyOS or skyiDM — separate blast
+# radius per the Pattern-A convention already in use on the VPS.
+
+networks:
+  traefik-public:
+    external: true
+  presence-internal:
+    driver: bridge
+
+volumes:
+  presence-postgres-data:
+  presence-redis-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-presence}
+      POSTGRES_USER: ${POSTGRES_USER:-presence}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - presence-postgres-data:/var/lib/postgresql/data
+    networks:
+      - presence-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-presence}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - presence-redis-data:/data
+    networks:
+      - presence-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - traefik-public
+      - presence-internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.presence-api.rule=Host(`${PRESENCE_API_DOMAIN}`)"
+      - "traefik.http.routers.presence-api.entrypoints=websecure"
+      - "traefik.http.routers.presence-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.presence-api.loadbalancer.server.port=8000"
+      # rate-limit the public webhook surface — WhatsApp/GBP webhooks are
+      # internet-facing and need protection independent of app-level auth
+      - "traefik.http.middlewares.presence-ratelimit.ratelimit.average=100"
+      - "traefik.http.middlewares.presence-ratelimit.ratelimit.burst=50"
+      - "traefik.http.routers.presence-api.middlewares=presence-ratelimit"
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    command: celery -A gateway.celery_app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - presence-internal
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    command: celery -A gateway.celery_app beat --loglevel=info
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - presence-internal
