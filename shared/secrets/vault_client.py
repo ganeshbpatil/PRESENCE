@@ -76,8 +76,11 @@ class VaultClient:
         self._token_expires_at = time.monotonic() + max(auth["lease_duration"] - 30, 0)
         return self._token
 
-    async def resolve(self, ref: str) -> str:
-        """Read the raw token behind a vault reference."""
+    async def resolve(self, ref: str, key: str = "access_token") -> str:
+        """Read one named field behind a vault reference (default:
+        access_token). Use key="refresh_token" for the OAuth scaffold's
+        refresh_token_ref -- both fields live at the SAME ref, written
+        together by store() (see its docstring for why)."""
         token = await self._client_token()
         async with httpx.AsyncClient(base_url=self._addr, timeout=self._timeout) as client:
             try:
@@ -94,19 +97,28 @@ class VaultClient:
             raise VaultError(f"Vault read failed: {resp.status_code} {resp.text}")
 
         try:
-            return resp.json()["data"]["data"]["access_token"]
+            return resp.json()["data"]["data"][key]
         except (KeyError, TypeError) as exc:
             raise VaultError(f"Malformed secret at vault ref {ref!r}") from exc
 
-    async def store(self, ref: str, access_token: str) -> None:
-        """Write (or overwrite) the raw token behind a vault reference."""
+    async def store(self, ref: str, **fields: str) -> None:
+        """Write (or overwrite) one or more named fields behind a vault
+        reference, e.g. store(ref, access_token=..., refresh_token=...).
+
+        Vault KV v2's write endpoint REPLACES the entire secret version,
+        it does not merge -- calling store(ref, access_token=...) and
+        later store(ref, refresh_token=...) as two separate calls would
+        silently wipe out whichever field was written first. Always write
+        every field you have in one call (natural for an OAuth token
+        exchange response, which returns access_token + refresh_token
+        together)."""
         token = await self._client_token()
         async with httpx.AsyncClient(base_url=self._addr, timeout=self._timeout) as client:
             try:
                 resp = await client.post(
                     f"/v1/{self._kv_mount}/data/{ref}",
                     headers={"X-Vault-Token": token},
-                    json={"data": {"access_token": access_token}},
+                    json={"data": fields},
                 )
             except httpx.HTTPError as exc:
                 raise VaultError(f"Vault unreachable at {self._addr}: {exc}") from exc

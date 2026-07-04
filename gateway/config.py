@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_webhook_verify_token: str = ""
+    meta_redirect_uri: str = ""
+
+    # GBP OAuth -- .env.example has carried these as dead placeholders
+    # since the initial scaffold; this is what finally reads them. No
+    # adapter/token-exchange code uses them yet (see
+    # services/sync-engine/adapters/social/gbp.py's stub) -- wiring the
+    # real Google OAuth calls is a follow-up once these are set to a real
+    # registered app's credentials.
+    gbp_client_id: str = ""
+    gbp_client_secret: str = ""
+    gbp_redirect_uri: str = ""
 
     vault_addr: str = "http://vault:8200"
     vault_role_id: str = ""

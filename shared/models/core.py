@@ -113,8 +113,40 @@ class PlatformConnection(Base):
     provider: Mapped[str | None] = mapped_column(String)  # BSP name if platform == whatsapp
     external_id: Mapped[str | None] = mapped_column(String)
     access_token_ref: Mapped[str | None] = mapped_column(String)  # vault reference, never raw token
+    # OAuth scaffold (see shared/secrets/vault_client.py's store()/resolve()
+    # multi-key signature) -- populated once the real GBP/Meta token
+    # exchange is wired up, both nullable until then.
+    refresh_token_ref: Mapped[str | None] = mapped_column(String)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[list[str] | None] = mapped_column(JSONB)
     sync_status: Mapped[SyncStatus] = mapped_column(SAEnum(SyncStatus), default=SyncStatus.healthy)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        # One connection per business+platform -- the OAuth callback
+        # upserts rather than accumulating duplicate rows. No duplicates
+        # existed when this was added (checked directly against the live
+        # DB before writing the migration).
+        UniqueConstraint("business_id", "platform", name="uq_platform_connections_business_platform"),
+    )
+
+
+class OAuthState(Base):
+    """
+    CSRF nonce for the OAuth authorize/callback handshake (gateway/api/v1/
+    oauth.py). Short-lived (see OAUTH_STATE_TTL there) and single-use --
+    used_at is set the moment the callback validates it, so a replayed
+    callback with the same state is rejected on the second attempt.
+    """
+    __tablename__ = "oauth_states"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    platform: Mapped[PlatformName] = mapped_column(SAEnum(PlatformName), nullable=False)
+    state: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Review(Base):
