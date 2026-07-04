@@ -5,8 +5,13 @@
 // one function per endpoint actually used by the panel, matching the
 // response_model shapes in gateway/api/v1/*.py by hand.
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// Empty string = relative fetch, i.e. same origin as the page -- correct
+// for production, where Traefik routes /api (and /docs, /healthz, etc.)
+// on this same domain to the gateway (see docker-compose.yml's
+// presence-frontend/presence-api router priority split). Only local dev,
+// where the frontend runs on a different port than the API, needs this
+// set explicitly (see .env.local.example).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
