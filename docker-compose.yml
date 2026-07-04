@@ -13,6 +13,7 @@ networks:
 volumes:
   presence-postgres-data:
   presence-redis-data:
+  presence-vault-data:
 
 services:
   postgres:
@@ -41,6 +42,49 @@ services:
       - presence-internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Self-hosted secrets store for platform access tokens (Meta/GBP/WhatsApp
+  # OAuth tokens) -- see SECURITY_ARCHITECTURE.md's Secrets Management
+  # section and shared/secrets/vault_client.py. Deliberately NOT on
+  # traefik-public -- never internet-reachable, only gateway/celery talk to
+  # it over presence-internal.
+  #
+  # Vault starts sealed after every restart (single-node, no cloud KMS
+  # auto-unseal available on this VPS) -- gateway/celery do NOT hard-depend
+  # on it at boot (see gateway/vault.py: vault calls happen lazily, per
+  # request/task, and fail closed with a clear error rather than blocking
+  # the whole stack from starting). After `docker compose up`, whoever has
+  # the unseal keys (see scripts/vault-init.sh) must run
+  # `docker compose exec vault vault operator unseal` (x3) by hand before
+  # any vault-dependent feature (storing/reading a platform token) works --
+  # everything else (auth, billing, WhatsApp, reviews) is unaffected.
+  vault:
+    image: hashicorp/vault:1.17
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - presence-vault-data:/vault/data
+      - ./vault/config.hcl:/vault/config/config.hcl:ro
+    # No explicit -config flag: the official image's entrypoint already
+    # injects "-config=/vault/config" (the whole directory) for the
+    # `server` subcommand -- adding our own -config pointed at the same
+    # file too gives Vault two listener stanzas both binding :8200
+    # ("address already in use"). Just "server" lets the entrypoint's
+    # default directory-scan pick up vault/config.hcl on its own.
+    command: server
+    networks:
+      - presence-internal
+    healthcheck:
+      # Plain TCP check, not an HTTP status check: the vault image is
+      # alpine-based with no curl, and Vault's /sys/health intentionally
+      # returns non-200 (503 sealed / 501 uninitialized) in the exact
+      # states we still consider "alive" here -- sealed-after-restart is
+      # expected and must not block dependent containers from starting.
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8200"]
       interval: 10s
       timeout: 5s
       retries: 5

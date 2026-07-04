@@ -15,15 +15,26 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from gateway.celery_app import app
+from gateway.config import get_settings
 from gateway.db import async_session_factory
 from shared.models.core import PlatformConnection, PlatformName, ScheduledPost
+from shared.secrets.vault_client import VaultClient, VaultError, get_vault_client
 
 _meta_mod = importlib.import_module("services.sync-engine.adapters.social.meta")
 MetaAdapter = _meta_mod.MetaAdapter
 MetaAdapterError = _meta_mod.MetaAdapterError
 
 
-async def _publish_due_posts() -> None:
+async def _publish_due_posts(vault: VaultClient | None = None) -> None:
+    if vault is None:
+        settings = get_settings()
+        vault = get_vault_client(
+            addr=settings.vault_addr,
+            role_id=settings.vault_role_id,
+            secret_id=settings.vault_secret_id,
+            kv_mount=settings.vault_kv_mount,
+        )
+
     async with async_session_factory() as db:
         due_posts = list(
             (
@@ -50,7 +61,16 @@ async def _publish_due_posts() -> None:
                 post.status = "failed_no_connection"
                 continue
 
-            adapter = MetaAdapter(access_token=connection.access_token_ref)
+            try:
+                access_token = await vault.resolve(connection.access_token_ref)
+            except VaultError:
+                # Vault unreachable/sealed or the ref no longer resolves --
+                # this post retries next beat tick, it does not crash the
+                # whole task (CLAUDE.md principle #1: degrade, don't break).
+                post.status = "failed"
+                continue
+
+            adapter = MetaAdapter(access_token=access_token)
             try:
                 result = await adapter.create_post(
                     connection.external_id or "", post.content, post.media_url
