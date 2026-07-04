@@ -118,9 +118,12 @@ async def test_agency_viewer_cannot_recharge_credit(client: AsyncClient):
     headers = await _signup(client, "agency_viewer", agency_id)
     resp = await client.post(
         f"/api/v1/credit-ledger/{business_id}/recharge",
-        json={"credit_type": "ai", "amount": "10.00"},
+        json={"credit_type": "ai", "razorpay_payment_id": "pay_test123"},
         headers=headers,
     )
+    # RBAC is enforced before the Razorpay lookup ever happens, so a fake
+    # payment ID is fine here -- this is testing the 403, not payment
+    # verification.
     assert resp.status_code == 403
 
 

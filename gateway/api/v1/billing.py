@@ -27,7 +27,13 @@ from services.billing.razorpay_client import (
     RazorpayError,
     verify_webhook_signature,
 )
-from shared.models.core import CreditType, Subscription, User
+from shared.models.core import CreditLedgerEntry, CreditType, Subscription, User
+
+# Namespace for deriving a stable UUID from a Razorpay payment ID (not a
+# secret -- just gives recharge_credit() a reference_id to key idempotency
+# on, since CreditLedgerEntry.reference_id is UUID-typed and Razorpay's IDs
+# aren't UUIDs).
+_RAZORPAY_PAYMENT_REFERENCE_NAMESPACE = uuid.UUID("6f5a1d3e-6e7c-4a3a-8b0e-0f6a1f7d9c2a")
 
 router = APIRouter(tags=["billing"])
 
@@ -49,8 +55,11 @@ class SubscriptionResponse(BaseModel):
 
 class RechargeRequest(BaseModel):
     credit_type: CreditType
-    amount: Decimal
-    reference_type: str = "recharge"
+    # A real captured Razorpay payment ID (e.g. from a Payment Link or
+    # Checkout flow) -- NOT a client-supplied amount. recharge_credit fetches
+    # the payment from Razorpay and credits exactly what Razorpay confirms
+    # was captured; nothing about the credited amount is caller-controlled.
+    razorpay_payment_id: str
 
 
 class BalanceResponse(BaseModel):
@@ -139,14 +148,66 @@ async def recharge_credit(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> BalanceResponse:
-    # NOTE: this trusts the caller-supplied amount. A production version
-    # should instead be driven by a verified Razorpay payment-capture
-    # webhook (mirroring razorpay_webhook above), not a client-authored
-    # amount — flagging rather than silently shipping this as bulletproof,
-    # since there's no live Razorpay flow to verify against in this pass.
     await require_business_write_access(business_id, user, db)
+    settings = get_settings()
+
+    if not (settings.razorpay_key_id and settings.razorpay_key_secret):
+        # Phase 0 placeholder .env, no live Razorpay account configured yet
+        # -- same "untestable until secrets configured" precedent as
+        # create_subscription above. Refuse rather than silently accept an
+        # unverifiable recharge.
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Razorpay is not configured"
+        )
+
+    client = RazorpayClient(settings.razorpay_key_id, settings.razorpay_key_secret)
+    try:
+        payment = await client.fetch_payment(body.razorpay_payment_id)
+    except RazorpayError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+    if payment.get("status") != "captured":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"Razorpay payment {body.razorpay_payment_id} is not captured "
+            f"(status={payment.get('status')!r})",
+        )
+    if payment.get("currency") != "INR":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Only INR payments are supported"
+        )
+
+    # Razorpay reports amount in paise; the ledger is rupee-denominated.
+    amount = Decimal(payment["amount"]) / Decimal(100)
+
+    reference_id = uuid.uuid5(
+        _RAZORPAY_PAYMENT_REFERENCE_NAMESPACE, body.razorpay_payment_id
+    )
+    already_credited = (
+        await db.execute(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.business_id == business_id,
+                CreditLedgerEntry.reference_type == "razorpay_payment",
+                CreditLedgerEntry.reference_id == reference_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if already_credited is not None:
+        # Idempotent replay -- same payment ID submitted twice (e.g. a
+        # retried frontend request) must not double-credit.
+        return BalanceResponse(
+            business_id=business_id,
+            credit_type=body.credit_type,
+            balance=already_credited.balance_after,
+        )
+
     entry = await credit_ledger.credit(
-        db, business_id, body.credit_type, body.amount, reference_type=body.reference_type
+        db,
+        business_id,
+        body.credit_type,
+        amount,
+        reference_type="razorpay_payment",
+        reference_id=reference_id,
     )
     await db.commit()
     return BalanceResponse(
