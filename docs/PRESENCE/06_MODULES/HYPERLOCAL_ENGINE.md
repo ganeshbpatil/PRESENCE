@@ -1,0 +1,3 @@
+# Module: Hyperlocal Engine (Cross-Promotion / Marketplace-Adjacent) — **DEFERRED (Phase 3+)**
+
+This is the module most likely to get silently scope-crept back in because it sounds core to the "hyperlocal" positioning. It is not core to v1. Cross-promotion, local discovery, and marketplace-style business-to-business-to-consumer matching all require two-sided consumer-side density this product will not have at launch (see BUSINESS_MODEL.md's marketplace deferral rationale). Do not begin architecture work on this module without an explicit override conversation backed by real Phase 2/3 data showing consumer-side density has actually emerged.

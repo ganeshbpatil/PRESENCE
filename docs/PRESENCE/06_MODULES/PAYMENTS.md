@@ -1,0 +1,3 @@
+# Module: Payments — **P0 scope is billing ONLY, embedded commerce is DEFERRED**
+
+In scope now: subscription billing + AI/WhatsApp credit recharge via Razorpay (decision locked during LocalEdge exploration — do not re-evaluate PGs). Explicitly DEFERRED: commission-based revenue, in-product payment collection on behalf of businesses (e.g., customers paying the SMB through PRESENCE) — this opens an RBI PA/PG compliance surface (aggregator licensing) that should not be taken on pre-PMF. If a pilot customer asks for this, the answer is "we handle your subscription billing; taking customer payments on your behalf is a deliberately deferred capability" — not a scope-creep yes.

@@ -1,0 +1,98 @@
+name: CI/CD
+
+# Shape follows docs/PRESENCE/08_DEVOPS/CI_CD.md: test -> build -> deploy,
+# staging auto-deploys on merge to main, production requires manual
+# approval (configure a "production" GitHub Environment with required
+# reviewers in repo settings — that's what gates the job below).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: presence
+          POSTGRES_PASSWORD: presence
+          POSTGRES_DB: presence
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U presence"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://presence:presence@localhost:5432/presence
+      REDIS_URL: redis://localhost:6379/0
+      CELERY_BROKER_URL: redis://localhost:6379/1
+      CELERY_RESULT_BACKEND: redis://localhost:6379/2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - name: Run migrations
+        run: alembic upgrade head
+      # Per TESTING_STRATEGY.md: attribution-engine and billing suites are a
+      # hard gate at 100% once they exist; everything else is a warning at
+      # Phase 1. Neither suite exists yet (Phase 0 scaffolding) — this runs
+      # the full suite as a plain (non-blocking-by-category) gate for now.
+      - run: pytest -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build gateway image
+        run: docker build -f gateway/Dockerfile -t presence-gateway:${{ github.sha }} .
+
+  deploy-staging:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ${{ secrets.VPS_STAGING_DIR }}
+            DEPLOY_BRANCH=main ./scripts/deploy.sh
+
+  deploy-production:
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Manual approval gate: add required reviewers to the "production"
+    # environment in repo Settings -> Environments. This job will pause
+    # here until approved, matching the founder-approval step in CI_CD.md.
+    environment: production
+    steps:
+      - name: Deploy to production via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ${{ secrets.VPS_PRODUCTION_DIR }}
+            DEPLOY_BRANCH=main ./scripts/deploy.sh

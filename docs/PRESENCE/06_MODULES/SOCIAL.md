@@ -1,0 +1,3 @@
+# Module: Social (Meta/Instagram) — **P0, narrow scope**
+
+v1 scope: read Meta/Instagram presence data (for attribution signal input) + basic scheduled posting. Explicitly NOT in scope: Meta/Instagram Ads management (Meta Ads Manager already does this — do not rebuild it), LinkedIn integration (not requested by any validated segment yet — the original module brief included LinkedIn as a connected platform; no evidence in the diligence memo's research that Pune SMB target segments use LinkedIn as a customer-facing channel — deprioritize unless a specific segment's Phase 0 research shows otherwise).
