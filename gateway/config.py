@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = "noreply@presence.local"
 
+    # Comma-separated origins the admin-panel frontend is served from (e.g.
+    # "http://localhost:3000,https://app.presence.yourdomain.com") -- empty
+    # means no cross-origin frontend is configured yet.
+    cors_allowed_origins: str = ""
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
