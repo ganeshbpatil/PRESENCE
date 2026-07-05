@@ -42,8 +42,22 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function EmptyState({ label }: { label: string }) {
-  return <p className="text-sm text-neutral-500 dark:text-neutral-400">{label}</p>;
+export function EmptyState({
+  label,
+  icon: Icon,
+}: {
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}) {
+  if (!Icon) {
+    return <p className="text-sm text-neutral-500 dark:text-neutral-400">{label}</p>;
+  }
+  return (
+    <div className="flex flex-col items-center gap-2 py-8 text-center">
+      <Icon className="size-8 text-neutral-400 dark:text-neutral-600" />
+      <p className="text-sm text-neutral-500 dark:text-neutral-400">{label}</p>
+    </div>
+  );
 }
 
 export function ErrorState({ message }: { message: string }) {
