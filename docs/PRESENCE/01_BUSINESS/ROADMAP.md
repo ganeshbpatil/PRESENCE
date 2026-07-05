@@ -16,6 +16,28 @@ Core: sync engine (GBP/Meta/WhatsApp read+write), attribution v0 (proxy signals 
 
 **Exit criteria:** ≥85% pilot cohort retained at day 90, ≥1 agency actively reselling with ≥5 sub-accounts, ≥3 real attribution case studies.
 
+## Phase 2.5 — Consumer Discovery (Hyperlocal Engine) — spec'd, build gated (2026-07-04)
+
+Not a scheduled build phase — a gate check evaluated at the Phase 2 exit
+boundary. See `06_MODULES/HYPERLOCAL_ENGINE.md` for the full spec and
+`06_MODULES/CUSTOMER.md` Part 2 for the consumer-identity layer it depends
+on. Ganesh approved this as a planned future product surface (third
+persona, see `02_PRODUCT/USER_PERSONAS.md` Persona C); Phase 1–2 engineering
+time is not diverted to it.
+
+**Entry criteria (evaluated using real Phase 2 pilot data, not projections):**
+at least one micro-geo with ≥15–20 PRESENCE-managed businesses and median
+≥10 synced reviews with real rating spread — see `HYPERLOCAL_ENGINE.md` for
+the full bar. If Phase 2 doesn't clear this, this phase is re-evaluated at
+the next phase boundary rather than started anyway.
+
+**If triggered:** build `services/discovery-engine/` (read-only discovery
+over existing business/review data), the `consumers` identity layer, and
+the discovery API surface — all per the module specs. Bookings, payments,
+loyalty, consumer-authored reviews, and paid placement remain out of scope
+even if this phase triggers — those still need their own separate override
+conversation per `CLAUDE.md`.
+
 ## Phase 3 — Agency-Channel Scale (Months 7–18)
 Dedicated Agency Partnerships hire. Formalized white-label product. Geographic expansion per GTM_STRATEGY.md. Introduce Scale tier once 2–3 genuine multi-branch reference accounts exist.
 
