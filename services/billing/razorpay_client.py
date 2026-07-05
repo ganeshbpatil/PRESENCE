@@ -61,6 +61,20 @@ class RazorpayClient:
             )
         return resp.json()
 
+    async def fetch_payment(self, razorpay_payment_id: str) -> dict:
+        """Used to verify a credit-ledger recharge against Razorpay's own
+        record of the payment (status, amount, currency) rather than
+        trusting a client-supplied amount — see billing.py's recharge_credit."""
+        async with httpx.AsyncClient(
+            base_url=_BASE_URL, auth=(self._key_id, self._key_secret), timeout=10.0
+        ) as client:
+            resp = await client.get(f"/payments/{razorpay_payment_id}")
+        if resp.status_code >= 300:
+            raise RazorpayError(
+                f"Razorpay fetch_payment failed: {resp.status_code} {resp.text}"
+            )
+        return resp.json()
+
 
 def verify_webhook_signature(raw_body: bytes, signature: str, webhook_secret: str) -> bool:
     """Constant-time HMAC-SHA256 verification per Razorpay's webhook docs.

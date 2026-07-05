@@ -21,6 +21,7 @@ from gateway.config import get_settings
 from gateway.db import get_db
 from gateway.security import (
     TokenError,
+    assert_valid_invite_code,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -39,6 +40,14 @@ class SignupRequest(BaseModel):
     role: UserRole
     business_id: uuid.UUID | None = None
     agency_id: uuid.UUID | None = None
+    # Required when settings.signup_invite_code is set (production) -- see
+    # gateway/security.py's assert_valid_invite_code. Every signup here
+    # references an already-existing business_id/agency_id (smb_owner
+    # requires business_id, agency roles require agency_id below), and
+    # those IDs are not secret -- they appear in ordinary API responses,
+    # report filenames, and OAuth callback URLs. Without this gate, anyone
+    # who's seen an agency_id can self-register as agency_admin for it.
+    invite_code: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -101,6 +110,11 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)) -> Tok
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "agency roles require agency_id"
         )
+
+    # Every signup path above references an existing business_id/agency_id
+    # -- gate it the same way business/agency creation already is, so
+    # knowing an ID (which isn't secret) isn't enough to join it.
+    assert_valid_invite_code(body.invite_code)
 
     user = User(
         email=body.email,

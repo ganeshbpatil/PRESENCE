@@ -402,20 +402,26 @@ function CreditCard({
   onChanged: () => void;
 }) {
   const [creditType, setCreditType] = useState<"ai" | "whatsapp">("ai");
-  const [amount, setAmount] = useState("");
+  const [paymentId, setPaymentId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function submit() {
-    if (!amount) return;
+    if (!paymentId) return;
     setSaving(true);
     setError(null);
     try {
-      await rechargeCredit(token, businessId, { credit_type: creditType, amount });
-      setAmount("");
+      // The backend fetches this payment from Razorpay and credits exactly
+      // what it confirms was captured -- it no longer trusts a client-typed
+      // amount (see gateway/api/v1/billing.py:recharge_credit).
+      await rechargeCredit(token, businessId, {
+        credit_type: creditType,
+        razorpay_payment_id: paymentId,
+      });
+      setPaymentId("");
       onChanged();
     } catch {
-      setError("Could not recharge credit.");
+      setError("Could not recharge credit — check the payment ID is a captured Razorpay payment.");
     } finally {
       setSaving(false);
     }
@@ -446,15 +452,14 @@ function CreditCard({
             <option value="whatsapp">WhatsApp</option>
           </Select>
           <TextInput
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Amount"
-            inputMode="decimal"
+            value={paymentId}
+            onChange={(e) => setPaymentId(e.target.value)}
+            placeholder="Razorpay payment ID (pay_...)"
           />
           <ConfirmButton
-            confirmMessage={`Recharge ${amount || "0"} ${creditType} credit for this business?`}
+            confirmMessage={`Recharge ${creditType} credit using Razorpay payment ${paymentId || "?"}?`}
             onConfirm={submit}
-            disabled={saving || !amount}
+            disabled={saving || !paymentId}
           >
             {saving ? "Recharging..." : "Recharge"}
           </ConfirmButton>

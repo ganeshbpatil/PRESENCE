@@ -95,6 +95,7 @@ class Business(Base):
     __table_args__ = (
         Index("ix_businesses_category_tier", "category", "tier"),
         Index("ix_businesses_churned_at", "churned_at"),
+        Index("ix_businesses_agency_id", "agency_id"),
     )
 
 
@@ -148,6 +149,10 @@ class OAuthState(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        Index("ix_oauth_states_business_id", "business_id"),
+    )
+
 
 class Review(Base):
     """Canonical review data — OUR system of record, synced from platforms."""
@@ -162,6 +167,10 @@ class Review(Base):
     ai_drafted_response: Mapped[str | None] = mapped_column(Text)
     response_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_reviews_business_id", "business_id"),
+    )
 
 
 class AttributionSignal(Base):
@@ -263,6 +272,11 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        Index("ix_users_business_id", "business_id"),
+        Index("ix_users_agency_id", "agency_id"),
+    )
+
 
 class RefreshToken(Base):
     """Lets a refresh token be revoked server-side without a JWT blocklist."""
@@ -316,6 +330,10 @@ class Campaign(Base):
     status: Mapped[str] = mapped_column(String, default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    __table_args__ = (
+        Index("ix_campaigns_business_id", "business_id"),
+    )
+
 
 class CampaignMessage(Base):
     __tablename__ = "campaign_messages"
@@ -365,6 +383,10 @@ class Subscription(Base):
     status: Mapped[str] = mapped_column(String, default="created")
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_subscriptions_business_id", "business_id"),
+    )
 
 
 class ScheduledPost(Base):

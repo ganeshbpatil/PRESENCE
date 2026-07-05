@@ -73,11 +73,17 @@ async def test_draft_response_failure_refunds_credit(client: AsyncClient):
     business_id, headers = await _signup_owner(client)
     review_id = await _create_review(client, business_id, headers)
 
-    await client.post(
-        f"/api/v1/credit-ledger/{business_id}/recharge",
-        json={"credit_type": "ai", "amount": "1.00"},
-        headers=headers,
-    )
+    # Seed credit directly through the ledger service rather than the HTTP
+    # recharge endpoint -- that endpoint now requires a real captured
+    # Razorpay payment to verify against (see billing.py:recharge_credit),
+    # which isn't available in this test environment. Going straight
+    # through credit_ledger.credit() is the same thing the endpoint itself
+    # does internally once a payment is verified.
+    async with async_session_factory() as db:
+        await credit_ledger.credit(
+            db, uuid.UUID(business_id), CreditType.ai, Decimal("1.00"), reference_type="test_seed"
+        )
+        await db.commit()
 
     # No real OPENROUTER_API_KEY/ANTHROPIC_API_KEY configured -> the
     # provider call fails and the pre-flight debit must be refunded.

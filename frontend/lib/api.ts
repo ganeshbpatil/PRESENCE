@@ -363,7 +363,7 @@ export const getCreditBalances = (token: string, businessId: string) =>
 export const rechargeCredit = (
   token: string,
   businessId: string,
-  body: { credit_type: "ai" | "whatsapp"; amount: string }
+  body: { credit_type: "ai" | "whatsapp"; razorpay_payment_id: string }
 ) =>
   request<BalanceResponse>(`/api/v1/credit-ledger/${businessId}/recharge`, {
     method: "POST",
