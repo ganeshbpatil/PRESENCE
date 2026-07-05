@@ -423,3 +423,44 @@ export interface OAuthStatusResponse {
 
 export const getOAuthStatus = (token: string) =>
   request<OAuthStatusResponse>("/api/v1/oauth/status", { token });
+
+// --- Dashboard ---
+
+export interface ReviewVolumePoint {
+  date: string;
+  count: number;
+}
+
+export interface RatingBucket {
+  rating: number;
+  count: number;
+}
+
+export interface DashboardStats {
+  avg_rating: number | null;
+  reviews_this_month: number;
+  pending_replies: number;
+  reply_rate_pct: number | null;
+  review_volume: ReviewVolumePoint[];
+  rating_distribution: RatingBucket[];
+}
+
+export interface BusinessDashboard extends DashboardStats {
+  business_id: string;
+}
+
+export interface AgencyDashboard extends DashboardStats {
+  agency_id: string;
+  active_businesses: number;
+  total_businesses: number;
+}
+
+export const getBusinessDashboard = (token: string, businessId: string) =>
+  request<BusinessDashboard>(`/api/v1/businesses/${businessId}/dashboard`, {
+    token,
+  });
+
+export const getAgencyDashboard = (token: string, agencyId: string) =>
+  request<AgencyDashboard>(`/api/v1/agencies/${agencyId}/dashboard`, {
+    token,
+  });

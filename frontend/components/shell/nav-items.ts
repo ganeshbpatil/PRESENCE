@@ -1,4 +1,4 @@
-import { Building2, Users } from "lucide-react";
+import { Building2, LayoutDashboard, Users } from "lucide-react";
 import type { UserResponse } from "@/lib/api";
 
 export interface NavItem {
@@ -9,7 +9,10 @@ export interface NavItem {
 
 export function getNavItems(user: UserResponse | null): NavItem[] {
   if (!user || user.role === "smb_owner") return [];
-  const items: NavItem[] = [{ label: "Businesses", href: "/", icon: Building2 }];
+  const items: NavItem[] = [
+    { label: "Dashboard", href: "/", icon: LayoutDashboard },
+    { label: "Businesses", href: "/businesses", icon: Building2 },
+  ];
   if (user.agency_id) {
     items.push({ label: "Agency", href: `/agencies/${user.agency_id}`, icon: Users });
   }

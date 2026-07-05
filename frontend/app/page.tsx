@@ -2,19 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { Building2 } from "lucide-react";
+import { Building2, CheckCircle2, Clock, MessageSquareText, Star } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { getAgencyBusinesses, ApiError, type BusinessSummary } from "@/lib/api";
-import { ErrorState, StatusBadge } from "@/components/ui";
+import { getAgencyDashboard, ApiError, type AgencyDashboard } from "@/lib/api";
+import { ErrorState } from "@/components/ui";
 import { AppShell } from "@/components/shell/app-shell";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/stat-card";
+import { ReviewVolumeChart, RatingDistributionChart } from "@/components/dashboard-charts";
 
-export default function HomePage() {
+export default function DashboardPage() {
   const { token, user, loading } = useAuth();
   const router = useRouter();
-  const [businesses, setBusinesses] = useState<BusinessSummary[] | null>(null);
+  const [dashboard, setDashboard] = useState<AgencyDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,67 +27,59 @@ export default function HomePage() {
       return;
     }
     if (user.agency_id && token) {
-      getAgencyBusinesses(token, user.agency_id)
-        .then(setBusinesses)
+      getAgencyDashboard(token, user.agency_id)
+        .then(setDashboard)
         .catch((err) =>
-          setError(err instanceof ApiError ? err.message : "Could not load businesses.")
+          setError(err instanceof ApiError ? err.message : "Could not load the dashboard.")
         );
     }
   }, [loading, user, token, router]);
 
-  if (loading || (!error && !businesses && user?.agency_id)) {
+  if (loading || (!error && !dashboard && user?.agency_id)) {
     return <main className="flex-1 p-6 text-sm text-muted-foreground">Loading...</main>;
   }
   if (!user) return null; // redirecting to /login
 
   return (
-    <AppShell title="Agency businesses" subtitle={user.email}>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-        <div className="flex items-center justify-end gap-2">
-          {user.agency_id && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/agencies/${user.agency_id}`}>Manage agency</Link>
-            </Button>
-          )}
-          <Button size="sm" asChild>
-            <Link href="/businesses/new">Add business</Link>
-          </Button>
-        </div>
-
+    <AppShell title="Dashboard" subtitle={user.email}>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         {error && <ErrorState message={error} />}
 
-        {businesses && businesses.length === 0 && (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
-              <Building2 className="size-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                No businesses under this agency yet.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        {dashboard && (
+          <>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <StatCard
+                icon={Building2}
+                label="Active businesses"
+                value={`${dashboard.active_businesses} / ${dashboard.total_businesses}`}
+              />
+              <StatCard
+                icon={Star}
+                label="Avg rating"
+                value={dashboard.avg_rating != null ? dashboard.avg_rating.toFixed(1) : "—"}
+              />
+              <StatCard
+                icon={MessageSquareText}
+                label="Reviews this month"
+                value={dashboard.reviews_this_month}
+              />
+              <StatCard icon={Clock} label="Pending replies" value={dashboard.pending_replies} />
+              <StatCard
+                icon={CheckCircle2}
+                label="Reply rate"
+                value={
+                  dashboard.reply_rate_pct != null
+                    ? `${dashboard.reply_rate_pct.toFixed(0)}%`
+                    : "—"
+                }
+              />
+            </div>
 
-        {businesses && businesses.length > 0 && (
-          <Card className="p-0">
-            <ul className="divide-y">
-              {businesses.map((b) => (
-                <li key={b.id}>
-                  <Link
-                    href={`/businesses/${b.id}`}
-                    className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-accent/50"
-                  >
-                    <div>
-                      <p className="font-medium">{b.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {b.category} &middot; {b.tier}
-                      </p>
-                    </div>
-                    {b.subscription_status && <StatusBadge status={b.subscription_status} />}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ReviewVolumeChart data={dashboard.review_volume} />
+              <RatingDistributionChart data={dashboard.rating_distribution} />
+            </div>
+          </>
         )}
       </div>
     </AppShell>

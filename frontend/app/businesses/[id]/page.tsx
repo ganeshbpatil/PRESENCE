@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   CalendarClock,
+  CheckCircle2,
+  Clock,
   Link2,
+  MessageSquareText,
   MessagesSquare,
   Pencil,
   Send,
@@ -26,6 +29,7 @@ import {
   draftReviewResponse,
   getAttributionSummary,
   getBusiness,
+  getBusinessDashboard,
   getBusinessUsers,
   getConnectionsHealth,
   getContacts,
@@ -40,6 +44,7 @@ import {
   updateUser,
   type AttributionSummary,
   type BalanceResponse,
+  type BusinessDashboard,
   type BusinessResponse,
   type ConnectionResponse,
   type ContactResponse,
@@ -51,6 +56,8 @@ import {
 import { EmptyState, ErrorState, StatusBadge } from "@/components/ui";
 import { AppShell } from "@/components/shell/app-shell";
 import { ConfirmAction } from "@/components/confirm-action";
+import { StatCard } from "@/components/stat-card";
+import { ReviewVolumeChart, RatingDistributionChart } from "@/components/dashboard-charts";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -85,6 +92,7 @@ interface PanelData {
   oauthStatus: OAuthStatusResponse | null;
   attribution: AttributionSummary | null;
   team: UserSummary[];
+  dashboard: BusinessDashboard;
 }
 
 export default function BusinessDetailPage({
@@ -104,17 +112,27 @@ export default function BusinessDetailPage({
   const load = useCallback(
     async (authToken: string) => {
       try {
-        const [business, connections, reviews, posts, balances, contacts, oauthStatus, team] =
-          await Promise.all([
-            getBusiness(authToken, id),
-            getConnectionsHealth(authToken, id),
-            getReviews(authToken, id),
-            getScheduledPosts(authToken, id),
-            getCreditBalances(authToken, id),
-            getContacts(authToken, id),
-            getOAuthStatus(authToken),
-            getBusinessUsers(authToken, id),
-          ]);
+        const [
+          business,
+          connections,
+          reviews,
+          posts,
+          balances,
+          contacts,
+          oauthStatus,
+          team,
+          dashboard,
+        ] = await Promise.all([
+          getBusiness(authToken, id),
+          getConnectionsHealth(authToken, id),
+          getReviews(authToken, id),
+          getScheduledPosts(authToken, id),
+          getCreditBalances(authToken, id),
+          getContacts(authToken, id),
+          getOAuthStatus(authToken),
+          getBusinessUsers(authToken, id),
+          getBusinessDashboard(authToken, id),
+        ]);
         let attribution: AttributionSummary | null = null;
         try {
           attribution = await getAttributionSummary(authToken, id);
@@ -131,6 +149,7 @@ export default function BusinessDetailPage({
           oauthStatus,
           attribution,
           team,
+          dashboard,
         });
       } catch (err) {
         if (err instanceof ApiError && err.status === 403) {
@@ -170,8 +189,18 @@ export default function BusinessDetailPage({
   }
   if (!data || !token) return null;
 
-  const { business, connections, reviews, posts, balances, contacts, oauthStatus, attribution, team } =
-    data;
+  const {
+    business,
+    connections,
+    reviews,
+    posts,
+    balances,
+    contacts,
+    oauthStatus,
+    attribution,
+    team,
+    dashboard,
+  } = data;
 
   const aiBalance = balances.find((b) => b.credit_type === "ai")?.balance ?? "0";
   const waBalance = balances.find((b) => b.credit_type === "whatsapp")?.balance ?? "0";
@@ -205,6 +234,32 @@ export default function BusinessDetailPage({
               value={`${attribution.signal_completeness_pct}%`}
             />
           )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard
+            icon={Star}
+            label="Avg rating"
+            value={dashboard.avg_rating != null ? dashboard.avg_rating.toFixed(1) : "—"}
+          />
+          <StatCard
+            icon={MessageSquareText}
+            label="Reviews this month"
+            value={dashboard.reviews_this_month}
+          />
+          <StatCard icon={Clock} label="Pending replies" value={dashboard.pending_replies} />
+          <StatCard
+            icon={CheckCircle2}
+            label="Reply rate"
+            value={
+              dashboard.reply_rate_pct != null ? `${dashboard.reply_rate_pct.toFixed(0)}%` : "—"
+            }
+          />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ReviewVolumeChart data={dashboard.review_volume} />
+          <RatingDistributionChart data={dashboard.rating_distribution} />
         </div>
 
         {canWrite && (
@@ -255,26 +310,6 @@ export default function BusinessDetailPage({
         />
       </div>
     </AppShell>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <Card size="sm">
-      <CardContent className="flex flex-col gap-1.5">
-        <Icon className="size-4 text-muted-foreground" />
-        <p className="font-mono text-lg font-semibold leading-tight">{value}</p>
-        <p className="text-xs text-muted-foreground">{label}</p>
-      </CardContent>
-    </Card>
   );
 }
 
