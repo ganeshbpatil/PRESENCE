@@ -2,11 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 import { ErrorState } from "@/components/ui";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 export default function LoginPage() {
@@ -36,42 +37,66 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>PRESENCE Admin</CardTitle>
-          <CardDescription>Sign in to view your business</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <label className="block space-y-1 text-sm font-medium">
-              Email
-              <Input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </label>
+    <main className="relative flex flex-1 items-center justify-center overflow-hidden px-4 py-12">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_-20%,color-mix(in_oklch,var(--primary)_8%,transparent),transparent_60%)]"
+      />
 
-            <label className="block space-y-1 text-sm font-medium">
-              Password
-              <Input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </label>
+      <div className="flex w-full max-w-sm flex-col items-center gap-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Sparkles className="size-5" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold tracking-tight">PRESENCE</p>
+            <p className="text-sm text-muted-foreground">
+              AI-powered hyperlocal business OS
+            </p>
+          </div>
+        </div>
 
-            {error && <ErrorState message={error} />}
+        <Card className="w-full">
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <h1 className="text-base font-semibold leading-tight">Sign in</h1>
+                <p className="text-sm text-muted-foreground">
+                  Sign in to view your business
+                </p>
+              </div>
 
-            <Button type="submit" disabled={submitting} className="w-full">
-              {submitting ? "Signing in..." : "Sign in"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              <label className="block space-y-1 text-sm font-medium">
+                Email
+                <Input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+
+              <label className="block space-y-1 text-sm font-medium">
+                Password
+                <Input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+
+              {error && <ErrorState message={error} />}
+
+              <Button type="submit" disabled={submitting} className="w-full">
+                {submitting ? "Signing in..." : "Sign in"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }
