@@ -2,6 +2,22 @@
 
 import { use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Activity,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  Link2,
+  MessageSquareText,
+  MessagesSquare,
+  Pencil,
+  Send,
+  Sparkles,
+  Star,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import {
   ApiError,
@@ -13,6 +29,7 @@ import {
   draftReviewResponse,
   getAttributionSummary,
   getBusiness,
+  getBusinessDashboard,
   getBusinessUsers,
   getConnectionsHealth,
   getContacts,
@@ -27,6 +44,7 @@ import {
   updateUser,
   type AttributionSummary,
   type BalanceResponse,
+  type BusinessDashboard,
   type BusinessResponse,
   type ConnectionResponse,
   type ContactResponse,
@@ -35,16 +53,34 @@ import {
   type ScheduledPostResponse,
   type UserSummary,
 } from "@/lib/api";
+import { EmptyState, ErrorState, StatusBadge } from "@/components/ui";
+import { AppShell } from "@/components/shell/app-shell";
+import { ConfirmAction } from "@/components/confirm-action";
+import { StatCard } from "@/components/stat-card";
+import { ReviewVolumeChart, RatingDistributionChart } from "@/components/dashboard-charts";
+import { Button } from "@/components/ui/button";
 import {
-  Button,
   Card,
-  ConfirmButton,
-  EmptyState,
-  ErrorState,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
   Select,
-  StatusBadge,
-  TextInput,
-} from "@/components/ui";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface PanelData {
   business: BusinessResponse;
@@ -56,6 +92,7 @@ interface PanelData {
   oauthStatus: OAuthStatusResponse | null;
   attribution: AttributionSummary | null;
   team: UserSummary[];
+  dashboard: BusinessDashboard;
 }
 
 export default function BusinessDetailPage({
@@ -64,27 +101,38 @@ export default function BusinessDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { token, user, loading: authLoading, logout } = useAuth();
+  const { token, user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<PanelData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const canWrite = user?.role !== "agency_viewer";
 
   const load = useCallback(
     async (authToken: string) => {
       try {
-        const [business, connections, reviews, posts, balances, contacts, oauthStatus, team] =
-          await Promise.all([
-            getBusiness(authToken, id),
-            getConnectionsHealth(authToken, id),
-            getReviews(authToken, id),
-            getScheduledPosts(authToken, id),
-            getCreditBalances(authToken, id),
-            getContacts(authToken, id),
-            getOAuthStatus(authToken),
-            getBusinessUsers(authToken, id),
-          ]);
+        const [
+          business,
+          connections,
+          reviews,
+          posts,
+          balances,
+          contacts,
+          oauthStatus,
+          team,
+          dashboard,
+        ] = await Promise.all([
+          getBusiness(authToken, id),
+          getConnectionsHealth(authToken, id),
+          getReviews(authToken, id),
+          getScheduledPosts(authToken, id),
+          getCreditBalances(authToken, id),
+          getContacts(authToken, id),
+          getOAuthStatus(authToken),
+          getBusinessUsers(authToken, id),
+          getBusinessDashboard(authToken, id),
+        ]);
         let attribution: AttributionSummary | null = null;
         try {
           attribution = await getAttributionSummary(authToken, id);
@@ -101,6 +149,7 @@ export default function BusinessDetailPage({
           oauthStatus,
           attribution,
           team,
+          dashboard,
         });
       } catch (err) {
         if (err instanceof ApiError && err.status === 403) {
@@ -129,116 +178,191 @@ export default function BusinessDetailPage({
   const reload = () => token && load(token);
 
   if (authLoading || (!data && !error)) {
-    return <main className="flex-1 p-6 text-sm text-neutral-500">Loading...</main>;
+    return <main className="flex-1 p-6 text-sm text-muted-foreground">Loading...</main>;
   }
   if (error) {
     return (
-      <main className="flex-1 p-6 max-w-3xl mx-auto w-full">
+      <main className="mx-auto w-full max-w-3xl flex-1 p-6">
         <ErrorState message={error} />
       </main>
     );
   }
   if (!data || !token) return null;
 
-  const { business, connections, reviews, posts, balances, contacts, oauthStatus, attribution, team } =
-    data;
+  const {
+    business,
+    connections,
+    reviews,
+    posts,
+    balances,
+    contacts,
+    oauthStatus,
+    attribution,
+    team,
+    dashboard,
+  } = data;
+
+  const aiBalance = balances.find((b) => b.credit_type === "ai")?.balance ?? "0";
+  const waBalance = balances.find((b) => b.credit_type === "whatsapp")?.balance ?? "0";
+
+  const subtitle = [business.category, business.tier, business.area]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <main className="flex-1 p-6 max-w-3xl mx-auto w-full space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">{business.name}</h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            {business.category} &middot; {business.tier}
-            {business.area ? ` · ${business.area}` : ""}
-          </p>
-        </div>
-        <div className="text-right space-y-1">
-          {business.subscription_status && (
+    <AppShell
+      title={business.name}
+      subtitle={subtitle}
+      onEditBusiness={canWrite ? () => setEditOpen(true) : undefined}
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+        {business.subscription_status && (
+          <div className="flex justify-end">
             <StatusBadge status={business.subscription_status} />
-          )}
-          {user?.role !== "smb_owner" && (
-            <button onClick={logout} className="block text-sm underline">
-              Sign out
-            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <StatCard icon={Link2} label="Platform connections" value={connections.length} />
+          <StatCard icon={Sparkles} label="AI credit" value={aiBalance} />
+          <StatCard icon={MessagesSquare} label="WhatsApp credit" value={waBalance} />
+          <StatCard icon={Star} label="Reviews synced" value={reviews.length} />
+          {attribution?.signal_completeness_pct != null && (
+            <StatCard
+              icon={Activity}
+              label="Signal completeness"
+              value={`${attribution.signal_completeness_pct}%`}
+            />
           )}
         </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard
+            icon={Star}
+            label="Avg rating"
+            value={dashboard.avg_rating != null ? dashboard.avg_rating.toFixed(1) : "—"}
+          />
+          <StatCard
+            icon={MessageSquareText}
+            label="Reviews this month"
+            value={dashboard.reviews_this_month}
+          />
+          <StatCard icon={Clock} label="Pending replies" value={dashboard.pending_replies} />
+          <StatCard
+            icon={CheckCircle2}
+            label="Reply rate"
+            value={
+              dashboard.reply_rate_pct != null ? `${dashboard.reply_rate_pct.toFixed(0)}%` : "—"
+            }
+          />
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <ReviewVolumeChart data={dashboard.review_volume} />
+          <RatingDistributionChart data={dashboard.rating_distribution} />
+        </div>
+
+        {canWrite && (
+          <BusinessEditDialog
+            token={token}
+            business={business}
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            onSaved={reload}
+          />
+        )}
+
+        <ConnectionsCard
+          token={token}
+          businessId={id}
+          connections={connections}
+          oauthStatus={oauthStatus}
+          canWrite={canWrite}
+          onChanged={reload}
+        />
+
+        <CreditCard token={token} businessId={id} balances={balances} canWrite={canWrite} onChanged={reload} />
+
+        <ReviewsCard token={token} businessId={id} reviews={reviews} canWrite={canWrite} onChanged={reload} />
+
+        <PostsCard token={token} businessId={id} posts={posts} canWrite={canWrite} onChanged={reload} />
+
+        <TeamCard token={token} team={team} canWrite={canWrite} onChanged={reload} />
+
+        <ContactsCard
+          token={token}
+          businessId={id}
+          contacts={contacts}
+          canWrite={canWrite}
+          onChanged={reload}
+        />
+
+        {canWrite && (
+          <CampaignCard token={token} businessId={id} contacts={contacts} onChanged={reload} />
+        )}
+
+        <AttributionCard
+          token={token}
+          businessId={id}
+          summary={attribution}
+          canWrite={canWrite}
+          onChanged={reload}
+        />
       </div>
-
-      {canWrite && (
-        <BusinessEditForm token={token} business={business} onSaved={reload} />
-      )}
-
-      <ConnectionsCard
-        token={token}
-        businessId={id}
-        connections={connections}
-        oauthStatus={oauthStatus}
-        canWrite={canWrite}
-        onChanged={reload}
-      />
-
-      <CreditCard token={token} businessId={id} balances={balances} canWrite={canWrite} onChanged={reload} />
-
-      <ReviewsCard token={token} businessId={id} reviews={reviews} canWrite={canWrite} onChanged={reload} />
-
-      <PostsCard token={token} businessId={id} posts={posts} canWrite={canWrite} onChanged={reload} />
-
-      <TeamCard token={token} team={team} canWrite={canWrite} onChanged={reload} />
-
-      <ContactsCard
-        token={token}
-        businessId={id}
-        contacts={contacts}
-        canWrite={canWrite}
-        onChanged={reload}
-      />
-
-      {canWrite && (
-        <CampaignCard token={token} businessId={id} contacts={contacts} onChanged={reload} />
-      )}
-
-      <AttributionCard
-        token={token}
-        businessId={id}
-        summary={attribution}
-        canWrite={canWrite}
-        onChanged={reload}
-      />
-    </main>
+    </AppShell>
   );
 }
 
-function BusinessEditForm({
+function SectionCard({
+  icon: Icon,
+  title,
+  action,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Icon className="size-4 text-muted-foreground" />
+          {title}
+        </CardTitle>
+        {action && <CardAction>{action}</CardAction>}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">{children}</CardContent>
+    </Card>
+  );
+}
+
+function BusinessEditDialog({
   token,
   business,
+  open,
+  onOpenChange,
   onSaved,
 }: {
   token: string;
   business: BusinessResponse;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState(business.name);
   const [pincode, setPincode] = useState(business.pincode ?? "");
   const [area, setArea] = useState(business.area ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="text-sm underline text-left">
-        Edit business details
-      </button>
-    );
-  }
-
   async function save() {
     setSaving(true);
     setError(null);
     try {
       await updateBusiness(token, business.id, { name, pincode, area });
-      setOpen(false);
+      onOpenChange(false);
       onSaved();
     } catch {
       setError("Could not save changes.");
@@ -248,30 +372,45 @@ function BusinessEditForm({
   }
 
   return (
-    <Card title="Edit business">
-      <div className="space-y-2">
-        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-        <TextInput
-          value={area}
-          onChange={(e) => setArea(e.target.value)}
-          placeholder="Area"
-        />
-        <TextInput
-          value={pincode}
-          onChange={(e) => setPincode(e.target.value)}
-          placeholder="Pincode"
-        />
-        {error && <ErrorState message={error} />}
-        <div className="flex gap-2">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          setName(business.name);
+          setPincode(business.pincode ?? "");
+          setArea(business.area ?? "");
+          setError(null);
+        }
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="size-4 text-muted-foreground" />
+            Edit business
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
+          <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Area" />
+          <Input
+            value={pincode}
+            onChange={(e) => setPincode(e.target.value)}
+            placeholder="Pincode"
+          />
+          {error && <ErrorState message={error} />}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button onClick={save} disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button variant="secondary" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Card>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -316,11 +455,11 @@ function ConnectionsCard({
   }
 
   return (
-    <Card title="Platform connections">
+    <SectionCard icon={Link2} title="Platform connections">
       {connections.length === 0 ? (
-        <EmptyState label="No platform connections yet." />
+        <EmptyState label="No platform connections yet." icon={Link2} />
       ) : (
-        <ul className="space-y-2 mb-3">
+        <ul className="space-y-2">
           {connections.map((c) => (
             <li key={c.id} className="flex items-center justify-between text-sm">
               <span className="capitalize">
@@ -334,20 +473,25 @@ function ConnectionsCard({
       )}
 
       {canWrite && (
-        <div className="space-y-2 pt-3 border-t border-neutral-100 dark:border-neutral-900">
-          <div className="flex gap-2">
-            <Select value={platform} onChange={(e) => setPlatform(e.target.value as typeof platform)}>
-              <option value="gbp">GBP</option>
-              <option value="meta">Meta</option>
-              <option value="whatsapp">WhatsApp</option>
+        <div className="space-y-2 border-t pt-3">
+          <div className="flex flex-wrap gap-2">
+            <Select value={platform} onValueChange={(v) => setPlatform(v as typeof platform)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gbp">GBP</SelectItem>
+                <SelectItem value="meta">Meta</SelectItem>
+                <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              </SelectContent>
             </Select>
-            <TextInput
+            <Input
               value={externalId}
               onChange={(e) => setExternalId(e.target.value)}
               placeholder="External ID (e.g. locations/123)"
             />
           </div>
-          <TextInput
+          <Input
             value={accessToken}
             onChange={(e) => setAccessToken(e.target.value)}
             placeholder="Access token (manual, until OAuth is wired up)"
@@ -360,7 +504,7 @@ function ConnectionsCard({
 
           <div className="flex gap-2 pt-2">
             <Button
-              variant="secondary"
+              variant="outline"
               disabled
               title={
                 oauthStatus?.gbp_configured
@@ -371,7 +515,7 @@ function ConnectionsCard({
               Connect GBP via OAuth
             </Button>
             <Button
-              variant="secondary"
+              variant="outline"
               disabled
               title={
                 oauthStatus?.meta_configured
@@ -384,7 +528,7 @@ function ConnectionsCard({
           </div>
         </div>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -428,11 +572,11 @@ function CreditCard({
   }
 
   return (
-    <Card title="Credit balances">
+    <SectionCard icon={Wallet} title="Credit balances">
       {balances.length === 0 ? (
-        <EmptyState label="No credit activity yet." />
+        <EmptyState label="No credit activity yet." icon={Wallet} />
       ) : (
-        <ul className="space-y-2 mb-3">
+        <ul className="space-y-2">
           {balances.map((b) => (
             <li key={b.credit_type} className="flex items-center justify-between text-sm">
               <span className="capitalize">{b.credit_type}</span>
@@ -443,30 +587,34 @@ function CreditCard({
       )}
 
       {canWrite && (
-        <div className="flex gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-900">
-          <Select
-            value={creditType}
-            onChange={(e) => setCreditType(e.target.value as typeof creditType)}
-          >
-            <option value="ai">AI</option>
-            <option value="whatsapp">WhatsApp</option>
+        <div className="flex flex-wrap gap-2 border-t pt-3">
+          <Select value={creditType} onValueChange={(v) => setCreditType(v as typeof creditType)}>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ai">AI</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
+            </SelectContent>
           </Select>
-          <TextInput
+          <Input
             value={paymentId}
             onChange={(e) => setPaymentId(e.target.value)}
             placeholder="Razorpay payment ID (pay_...)"
+            className="min-w-48 flex-1"
           />
-          <ConfirmButton
-            confirmMessage={`Recharge ${creditType} credit using Razorpay payment ${paymentId || "?"}?`}
+          <ConfirmAction
+            title="Recharge credit"
+            description={`Recharge ${creditType} credit using Razorpay payment ${paymentId || "?"}?`}
             onConfirm={submit}
             disabled={saving || !paymentId}
           >
             {saving ? "Recharging..." : "Recharge"}
-          </ConfirmButton>
+          </ConfirmAction>
         </div>
       )}
       {error && <ErrorState message={error} />}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -530,35 +678,30 @@ function ReviewsCard({
   }
 
   return (
-    <Card title="Reviews">
+    <SectionCard icon={Star} title="Reviews">
       {reviews.length === 0 ? (
-        <EmptyState label="No reviews synced yet." />
+        <EmptyState label="No reviews synced yet." icon={Star} />
       ) : (
-        <ul className="space-y-3 mb-3">
+        <ul className="space-y-3">
           {reviews.map((r) => (
-            <li
-              key={r.id}
-              className="text-sm border-b border-neutral-100 dark:border-neutral-900 pb-3 last:border-0 last:pb-0"
-            >
+            <li key={r.id} className="border-b pb-3 text-sm last:border-0 last:pb-0">
               <div className="flex items-center justify-between">
-                <span className="capitalize font-medium">
+                <span className="font-medium capitalize">
                   {r.platform} {r.rating ? `★ ${r.rating}` : ""}
                 </span>
                 <StatusBadge status={r.response_sent_at ? "posted" : "pending"} />
               </div>
-              {r.text && (
-                <p className="text-neutral-600 dark:text-neutral-400 mt-1">{r.text}</p>
-              )}
+              {r.text && <p className="mt-1 text-muted-foreground">{r.text}</p>}
               {r.ai_drafted_response && (
-                <p className="text-neutral-500 dark:text-neutral-500 mt-1 italic">
+                <p className="mt-1 text-muted-foreground/80 italic">
                   Draft: {r.ai_drafted_response}
                 </p>
               )}
               {canWrite && !r.response_sent_at && (
-                <div className="flex gap-2 mt-2">
+                <div className="mt-2 flex gap-2">
                   {!r.ai_drafted_response && (
                     <Button
-                      variant="secondary"
+                      variant="outline"
                       onClick={() => draft(r.id)}
                       disabled={busyId === r.id}
                     >
@@ -566,13 +709,14 @@ function ReviewsCard({
                     </Button>
                   )}
                   {r.ai_drafted_response && (
-                    <ConfirmButton
-                      confirmMessage="Send this drafted response? This is a public-facing action."
+                    <ConfirmAction
+                      title="Send response"
+                      description="Send this drafted response? This is a public-facing action."
                       onConfirm={() => send(r.id)}
                       disabled={busyId === r.id}
                     >
                       Send response
-                    </ConfirmButton>
+                    </ConfirmAction>
                   )}
                 </div>
               )}
@@ -582,19 +726,24 @@ function ReviewsCard({
       )}
 
       {canWrite && (
-        <div className="space-y-2 pt-3 border-t border-neutral-100 dark:border-neutral-900">
-          <p className="text-xs text-neutral-500">
+        <div className="space-y-2 border-t pt-3">
+          <p className="text-xs text-muted-foreground">
             Add a test review (dev-only stand-in for a real GBP/Meta sync).
           </p>
-          <div className="flex gap-2">
-            <Select value={rating} onChange={(e) => setRating(e.target.value)}>
-              {[5, 4, 3, 2, 1].map((n) => (
-                <option key={n} value={n}>
-                  {n} star
-                </option>
-              ))}
+          <div className="flex flex-wrap gap-2">
+            <Select value={rating} onValueChange={setRating}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[5, 4, 3, 2, 1].map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n} star
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-            <TextInput
+            <Input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Review text"
@@ -604,7 +753,7 @@ function ReviewsCard({
         </div>
       )}
       {error && <ErrorState message={error} />}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -648,11 +797,11 @@ function PostsCard({
   }
 
   return (
-    <Card title="Scheduled social posts">
+    <SectionCard icon={CalendarClock} title="Scheduled social posts">
       {posts.length === 0 ? (
-        <EmptyState label="No posts scheduled." />
+        <EmptyState label="No posts scheduled." icon={CalendarClock} />
       ) : (
-        <ul className="space-y-2 mb-3">
+        <ul className="space-y-2">
           {posts.map((p) => (
             <li key={p.id} className="flex items-center justify-between text-sm">
               <span>
@@ -665,20 +814,25 @@ function PostsCard({
       )}
 
       {canWrite && (
-        <div className="space-y-2 pt-3 border-t border-neutral-100 dark:border-neutral-900">
-          <div className="flex gap-2">
-            <Select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-              <option value="meta">Meta</option>
-              <option value="instagram">Instagram</option>
+        <div className="space-y-2 border-t pt-3">
+          <div className="flex flex-wrap gap-2">
+            <Select value={platform} onValueChange={setPlatform}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="meta">Meta</SelectItem>
+                <SelectItem value="instagram">Instagram</SelectItem>
+              </SelectContent>
             </Select>
-            <input
+            <Input
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
-              className="rounded border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 py-1.5 text-sm"
+              className="w-auto"
             />
           </div>
-          <TextInput
+          <Input
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Post content"
@@ -689,7 +843,7 @@ function PostsCard({
           </Button>
         </div>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -726,11 +880,11 @@ function ContactsCard({
   }
 
   return (
-    <Card title="WhatsApp contacts">
+    <SectionCard icon={MessagesSquare} title="WhatsApp contacts">
       {contacts.length === 0 ? (
-        <EmptyState label="No contacts yet." />
+        <EmptyState label="No contacts yet." icon={MessagesSquare} />
       ) : (
-        <ul className="space-y-1 mb-3">
+        <ul className="space-y-1">
           {contacts.map((c) => (
             <li key={c.id} className="flex items-center justify-between text-sm">
               <span className="font-mono">{c.phone_e164}</span>
@@ -741,8 +895,8 @@ function ContactsCard({
       )}
 
       {canWrite && (
-        <div className="flex gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-900">
-          <TextInput
+        <div className="flex gap-2 border-t pt-3">
+          <Input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+91XXXXXXXXXX"
@@ -753,7 +907,7 @@ function ContactsCard({
         </div>
       )}
       {error && <ErrorState message={error} />}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -805,37 +959,37 @@ function CampaignCard({
   }
 
   return (
-    <Card title="WhatsApp campaigns">
-      <p className="text-xs text-neutral-500 mb-2">
+    <SectionCard icon={Send} title="WhatsApp campaigns">
+      <p className="text-xs text-muted-foreground">
         Sends to all {optedInCount} opted-in contact(s) — real messages, real credit.
       </p>
-      <div className="space-y-2">
-        <TextInput
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Campaign name"
-        />
-        <TextInput
-          value={templateName}
-          onChange={(e) => setTemplateName(e.target.value)}
-          placeholder="Template name (must exist in Gallabox)"
-        />
-        <Select value={category} onChange={(e) => setCategory(e.target.value as typeof category)}>
-          <option value="utility">Utility</option>
-          <option value="marketing">Marketing</option>
-          <option value="authentication">Authentication</option>
-        </Select>
-        {error && <ErrorState message={error} />}
-        {result && <p className="text-sm text-neutral-600 dark:text-neutral-400">{result}</p>}
-        <ConfirmButton
-          confirmMessage={`Send "${name || "this campaign"}" to ${optedInCount} opted-in contact(s) now?`}
-          onConfirm={submit}
-          disabled={sending || !name || !templateName}
-        >
-          {sending ? "Sending..." : "Send campaign"}
-        </ConfirmButton>
-      </div>
-    </Card>
+      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name" />
+      <Input
+        value={templateName}
+        onChange={(e) => setTemplateName(e.target.value)}
+        placeholder="Template name (must exist in Gallabox)"
+      />
+      <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
+        <SelectTrigger className="w-40">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="utility">Utility</SelectItem>
+          <SelectItem value="marketing">Marketing</SelectItem>
+          <SelectItem value="authentication">Authentication</SelectItem>
+        </SelectContent>
+      </Select>
+      {error && <ErrorState message={error} />}
+      {result && <p className="text-sm text-muted-foreground">{result}</p>}
+      <ConfirmAction
+        title="Send campaign"
+        description={`Send "${name || "this campaign"}" to ${optedInCount} opted-in contact(s) now?`}
+        onConfirm={submit}
+        disabled={sending || !name || !templateName}
+      >
+        {sending ? "Sending..." : "Send campaign"}
+      </ConfirmAction>
+    </SectionCard>
   );
 }
 
@@ -873,7 +1027,7 @@ function AttributionCard({
   }
 
   return (
-    <Card title="Attribution">
+    <SectionCard icon={TrendingUp} title="Attribution">
       {summary ? (
         <ul className="space-y-1 text-sm">
           <li>
@@ -884,22 +1038,22 @@ function AttributionCard({
             Signal completeness:{" "}
             <span className="font-mono">{summary.signal_completeness_pct ?? "—"}%</span>
           </li>
-          <li className="text-neutral-500 text-xs">
+          <li className="text-xs text-muted-foreground">
             Computed {new Date(summary.computed_at).toLocaleString()}
           </li>
         </ul>
       ) : (
-        <EmptyState label="No attribution correlation computed yet." />
+        <EmptyState label="No attribution correlation computed yet." icon={TrendingUp} />
       )}
       {canWrite && (
-        <div className="pt-3 mt-3 border-t border-neutral-100 dark:border-neutral-900">
+        <div className="border-t pt-3">
           {error && <ErrorState message={error} />}
           <Button onClick={trigger} disabled={queued}>
             {queued ? "Queued — recomputing..." : "Recompute (last 7 days)"}
           </Button>
         </div>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -931,9 +1085,9 @@ function TeamCard({
   }
 
   return (
-    <Card title="Team">
+    <SectionCard icon={Users} title="Team">
       {team.length === 0 ? (
-        <EmptyState label="No users on this business yet." />
+        <EmptyState label="No users on this business yet." icon={Users} />
       ) : (
         <ul className="space-y-2">
           {team.map((u) => (
@@ -942,14 +1096,15 @@ function TeamCard({
               <div className="flex items-center gap-2">
                 <StatusBadge status={u.is_active ? "healthy" : "broken"} />
                 {canWrite && (
-                  <ConfirmButton
-                    variant="secondary"
-                    confirmMessage={`${u.is_active ? "Deactivate" : "Reactivate"} ${u.email}?`}
+                  <ConfirmAction
+                    variant="outline"
+                    title={u.is_active ? "Deactivate user" : "Reactivate user"}
+                    description={`${u.is_active ? "Deactivate" : "Reactivate"} ${u.email}?`}
                     onConfirm={() => toggleActive(u)}
                     disabled={busyId === u.id}
                   >
                     {u.is_active ? "Deactivate" : "Reactivate"}
-                  </ConfirmButton>
+                  </ConfirmAction>
                 )}
               </div>
             </li>
@@ -957,6 +1112,6 @@ function TeamCard({
         </ul>
       )}
       {error && <ErrorState message={error} />}
-    </Card>
+    </SectionCard>
   );
 }
