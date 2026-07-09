@@ -11,6 +11,7 @@ happy-path Vault write needs a live, unsealed Vault, out of scope here.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -394,6 +395,118 @@ async def test_callback_exchanges_meta_code_then_fails_cleanly_when_vault_reject
         "/api/v1/oauth/callback/meta", params={"state": state, "code": "fake-code"}
     )
     assert resp.status_code == 502, resp.text
+
+
+@pytest.fixture
+def _mock_provider_and_fake_vault(monkeypatch):
+    """Combines the GBP token-exchange mock with an in-memory fake of
+    Vault's KV v2 API (AppRole login + read/write) so a test can drive a
+    real callback happy-path -- including a second callback for the same
+    business/platform -- without a live Vault container. The fake store()
+    REPLACES whatever was at a ref, matching real KV v2 semantics (see
+    shared/secrets/vault_client.py's store() docstring), which is exactly
+    the behavior the reconnect-without-refresh_token regression test below
+    needs to exercise.
+
+    Yields the list of queued GBP token-exchange responses -- push a dict
+    onto it before each callback the test drives."""
+    real_async_client = httpx.AsyncClient
+    vault_secrets: dict[str, dict[str, str]] = {}
+    gbp_responses: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(
+                200, json={"auth": {"client_token": "fake-vault-token", "lease_duration": 3600}}
+            )
+        if request.url.path.startswith("/v1/presence-secrets/data/"):
+            ref = request.url.path.removeprefix("/v1/presence-secrets/data/")
+            if request.method == "POST":
+                vault_secrets[ref] = json.loads(request.content)["data"]
+                return httpx.Response(200, json={"data": {"version": 1}})
+            data = vault_secrets.get(ref)
+            if data is None:
+                return httpx.Response(404, json={"errors": []})
+            return httpx.Response(200, json={"data": {"data": data}})
+        if request.url.host == "oauth2.googleapis.com":
+            return httpx.Response(200, json=gbp_responses.pop(0))
+        raise AssertionError(f"unexpected request to {request.url}")
+
+    def factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", factory)
+
+    app.dependency_overrides[get_vault_client] = _fake_vault_client
+    yield gbp_responses
+    app.dependency_overrides.pop(get_vault_client, None)
+
+
+def _fake_vault_client() -> VaultClient:
+    base = get_settings()
+    return VaultClient(
+        addr=base.vault_addr, role_id="x", secret_id="y", kv_mount=base.vault_kv_mount
+    )
+
+
+@pytest.mark.asyncio
+async def test_gbp_reconnect_without_refresh_token_preserves_existing_one(
+    client, _configure_gbp_and_meta, _mock_provider_and_fake_vault
+):
+    """Regression test: Vault KV v2's write REPLACES the whole secret, so
+    if a reconnect's token exchange doesn't return a fresh refresh_token,
+    the callback must pull the existing one forward before calling
+    store() -- otherwise it silently wipes the refresh_token a prior
+    connect had already stored, breaking sync until the business
+    reconnects."""
+    gbp_responses = _mock_provider_and_fake_vault
+    business_id, _headers = await _signup_owner(client)
+
+    gbp_responses.append(
+        {
+            "access_token": "first-access-token",
+            "refresh_token": "first-refresh-token",
+            "expires_in": 3600,
+            "scope": "https://www.googleapis.com/auth/business.manage",
+        }
+    )
+    state_1 = await _make_state(uuid.UUID(business_id), platform=PlatformName.gbp)
+    resp = await client.get(
+        "/api/v1/oauth/callback/gbp", params={"state": state_1, "code": "code-1"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Reconnect: this exchange omits refresh_token (e.g. consent already
+    # fully granted) -- the previously stored one must survive.
+    gbp_responses.append(
+        {
+            "access_token": "second-access-token",
+            "expires_in": 3600,
+            "scope": "https://www.googleapis.com/auth/business.manage",
+        }
+    )
+    state_2 = await _make_state(uuid.UUID(business_id), platform=PlatformName.gbp)
+    resp = await client.get(
+        "/api/v1/oauth/callback/gbp", params={"state": state_2, "code": "code-2"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with async_session_factory() as db:
+        conn = (
+            await db.execute(
+                select(PlatformConnection).where(
+                    PlatformConnection.business_id == uuid.UUID(business_id)
+                )
+            )
+        ).scalar_one()
+        assert conn.refresh_token_ref is not None
+
+    vault = _fake_vault_client()
+    refresh_token = await vault.resolve(conn.refresh_token_ref, key="refresh_token")
+    assert refresh_token == "first-refresh-token"
+    access_token = await vault.resolve(conn.access_token_ref, key="access_token")
+    assert access_token == "second-access-token"
 
 
 @pytest.mark.asyncio

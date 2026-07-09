@@ -173,6 +173,15 @@ async def oauth_callback(
 
     business_id = oauth_state.business_id
 
+    existing = (
+        await db.execute(
+            select(PlatformConnection).where(
+                PlatformConnection.business_id == business_id,
+                PlatformConnection.platform == platform,
+            )
+        )
+    ).scalar_one_or_none()
+
     if platform == PlatformName.gbp:
         token_data = await _exchange_gbp_code(settings, code)
         refresh_token = token_data.get("refresh_token")
@@ -199,6 +208,16 @@ async def oauth_callback(
     vault_fields = {"access_token": access_token}
     if refresh_token:
         vault_fields["refresh_token"] = refresh_token
+    elif existing is not None and existing.refresh_token_ref is not None:
+        # Vault KV v2's write REPLACES the whole secret (see
+        # VaultClient.store's docstring) -- if this exchange didn't return
+        # a fresh refresh_token (e.g. a provider skips it on some
+        # reconnects), pull the one already stored forward so this write
+        # doesn't silently wipe it out from under the existing connection.
+        try:
+            vault_fields["refresh_token"] = await vault.resolve(ref, key="refresh_token")
+        except VaultError:
+            pass  # nothing to preserve -- fall through, store() just won't set it
     try:
         await vault.store(ref, **vault_fields)
     except VaultError as exc:
@@ -208,15 +227,6 @@ async def oauth_callback(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "Could not store platform credential in vault"
         ) from exc
-
-    existing = (
-        await db.execute(
-            select(PlatformConnection).where(
-                PlatformConnection.business_id == business_id,
-                PlatformConnection.platform == platform,
-            )
-        )
-    ).scalar_one_or_none()
 
     if existing is not None:
         existing.access_token_ref = ref
