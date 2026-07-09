@@ -41,17 +41,26 @@ class Settings(BaseSettings):
     razorpay_key_secret: str = ""
     razorpay_webhook_secret: str = ""
 
+    # Meta OAuth -- see gateway/api/v1/oauth.py. meta_redirect_uri must be
+    # the exact URI registered in the Meta App's console (a single fixed
+    # path, e.g. https://<domain>/api/v1/oauth/callback/meta -- NOT
+    # templated with a business_id, Meta doesn't support wildcard redirect
+    # URIs; tenant context rides in the OAuth `state` param instead).
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_webhook_verify_token: str = ""
     meta_redirect_uri: str = ""
 
-    # GBP OAuth -- .env.example has carried these as dead placeholders
-    # since the initial scaffold; this is what finally reads them. No
-    # adapter/token-exchange code uses them yet (see
-    # services/sync-engine/adapters/social/gbp.py's stub) -- wiring the
-    # real Google OAuth calls is a follow-up once these are set to a real
-    # registered app's credentials.
+    # GBP OAuth -- see gateway/api/v1/oauth.py. gbp_redirect_uri must be
+    # the exact URI registered in the Google Cloud OAuth client (a single
+    # fixed path, e.g. https://<domain>/api/v1/oauth/callback/gbp -- same
+    # no-wildcard caveat as meta_redirect_uri above). Note the *data* API
+    # calls (get_insights/create_post against the actual Business Profile
+    # API) are still a deliberate stub in
+    # services/sync-engine/adapters/social/gbp.py -- that surface is
+    # under-documented enough to need a real test app before writing real
+    # calls; the OAuth token exchange itself is boilerplate, identical
+    # across all Google APIs, and safe to implement now.
     gbp_client_id: str = ""
     gbp_client_secret: str = ""
     gbp_redirect_uri: str = ""
